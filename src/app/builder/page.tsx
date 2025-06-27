@@ -675,7 +675,7 @@ export default function PromptBuilder() {
               <p className="text-base text-gray-500">
                 {isGeneratingQuestions 
                   ? "Our AI is analyzing your app idea to generate personalized questions..."
-                  : "These questions are tailored specifically to your app idea. Don&apos;t worry if they seem technical - we&apos;ll explain everything and suggest the best options for your needs."
+                  : "These questions are tailored specifically to your app idea. Don't worry if they seem technical - we'll explain everything and suggest the best options for your needs."
                 }
               </p>
               {!isGeneratingQuestions && questionsGenerated && dynamicQuestions.length > 0 && (
