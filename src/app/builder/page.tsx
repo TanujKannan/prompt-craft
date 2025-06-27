@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Textarea } from '@/components/ui/textarea'
@@ -9,6 +9,7 @@ import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { promptTemplates, templateCategories, getTemplatesByCategory, getTemplateById, type PromptTemplate } from '@/lib/templates'
 import { Lightbulb, HelpCircle, Rocket, Database, Palette, UserCheck, Plus, X, Check, BookOpen, ArrowRight, Sparkles } from 'lucide-react'
+import { debounce } from 'lodash'
 
 interface ClarifyingQuestion {
   id: string
@@ -165,8 +166,12 @@ export default function PromptBuilder() {
   const [sessionId, setSessionId] = useState<string | null>(null)
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
   const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({})
+  
+  // New state for dynamic questions
+  const [dynamicQuestions, setDynamicQuestions] = useState<ClarifyingQuestion[]>([])
+  const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
+  const [questionsGenerated, setQuestionsGenerated] = useState(false)
 
   // Check for template in localStorage on mount
   useEffect(() => {
@@ -204,85 +209,104 @@ export default function PromptBuilder() {
     return getTemplatesByCategory(selectedCategory)
   }
 
-  // Save app idea to Supabase with debounce
-  useEffect(() => {
-    if (!appIdea.trim()) return
+  // Auto-save debounced app idea
+  const debouncedSaveAppIdea = useCallback(
+    debounce(async (idea: string) => {
+      if (!idea.trim()) return
+      
+      // Skip database operations from frontend to avoid RLS policy violations
+      // Session creation is handled properly in the backend API routes
+      console.log('App idea updated:', idea.substring(0, 50) + '...')
+      
+      // Just update local state - no database operations needed here
+      // The backend API routes handle session creation with proper service role permissions
+    }, 1000),
+    [sessionId, user?.id]
+  )
 
-    const timeoutId = setTimeout(async () => {
-      try {
-        // Check if Supabase is properly configured
-        if (!isSupabaseConfigured()) {
-          console.log('Supabase not configured, skipping database save')
-          return
-        }
+  // Generate dynamic questions based on app idea
+  const generateDynamicQuestions = async (idea: string) => {
+    if (!idea.trim()) return
 
-        if (!sessionId) {
-          const { data, error } = await supabase
-            .from('prompt_sessions')
-            .insert({ 
-              app_idea: appIdea,
-              user_id: user?.id || null
-            })
-            .select()
-            .single()
+    console.log('Starting question generation for idea:', idea.substring(0, 50) + '...')
+    setIsGeneratingQuestions(true)
+    
+    try {
+      const response = await fetch('/api/generate-questions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ appIdea: idea })
+      })
 
-          if (error) {
-            console.error('Error creating session:', error)
-            // For now, continue without saving to database if there's an error
-            // This allows anonymous users to still use the builder
-            return
-          }
-          setSessionId(data.id)
-        } else {
-          const { error } = await supabase
-            .from('prompt_sessions')
-            .update({ app_idea: appIdea })
-            .eq('id', sessionId)
+      console.log('Question generation response status:', response.status)
 
-          if (error) {
-            console.error('Error updating session:', error)
-          }
-        }
-      } catch (error) {
-        console.error('Unexpected error saving app idea:', error)
-        // Continue without database storage for now
+      if (!response.ok) {
+        const errorData = await response.json()
+        console.error('Question generation failed:', errorData)
+        throw new Error(`Failed to generate questions: ${response.statusText}`)
       }
-    }, 1000)
 
-    return () => clearTimeout(timeoutId)
-  }, [appIdea, sessionId, user?.id])
+      const data = await response.json()
+      console.log('Question generation response data:', data)
+      
+      if (data.questions && Array.isArray(data.questions)) {
+        console.log('Setting dynamic questions:', data.questions.length, 'questions')
+        setDynamicQuestions(data.questions)
+        setQuestionsGenerated(true)
+        setAnswers({}) // Reset answers when new questions are generated
+        setShowCustomInput({})
+      } else {
+        console.error('Invalid response format:', data)
+        throw new Error('Invalid response format')
+      }
+    } catch (error) {
+      console.error('Error generating questions:', error)
+      // Fallback to static questions if dynamic generation fails
+      console.log('Falling back to static questions')
+      setDynamicQuestions(clarifyingQuestions)
+      setQuestionsGenerated(true)
+    } finally {
+      setIsGeneratingQuestions(false)
+      console.log('Question generation completed')
+    }
+  }
+
+  // Save app idea to Supabase with debounce
+  const saveAppIdea = async (idea: string) => {
+    debouncedSaveAppIdea(idea)
+  }
+
+  useEffect(() => {
+    if (appIdea.trim()) {
+      saveAppIdea(appIdea)
+    }
+  }, [appIdea])
+
+  const handleNext = async () => {
+    if (currentStep === 1) {
+      // Moving from step 1 to step 2 - generate dynamic questions
+      if (!appIdea.trim()) {
+        alert('Please enter your app idea first')
+        return
+      }
+      
+      // Generate questions if not already generated or if app idea changed significantly
+      if (!questionsGenerated) {
+        await generateDynamicQuestions(appIdea)
+      }
+    }
+    
+    setCurrentStep(prev => Math.min(prev + 1, 3))
+  }
 
   // Save answers to Supabase
   const saveAnswer = async (questionId: string, answer: { selected?: string; custom?: string }) => {
-    if (!sessionId) {
-      console.log('No session ID available, skipping answer save for:', questionId)
-      return
-    }
-
-    try {
-      const question = clarifyingQuestions.find(q => q.id === questionId)
-      if (!question) return
-
-      const answerText = answer.custom || answer.selected || ''
-      const explanation = answer.selected 
-        ? question.options?.find(opt => opt.value === answer.selected)?.explanation
-        : 'Custom input provided by user'
-
-      const { error } = await supabase
-        .from('clarifying_answers')
-        .upsert({
-          session_id: sessionId,
-          question: question.question,
-          selected_answer: answerText,
-          explanation: explanation
-        })
-
-      if (error) {
-        console.error('Error saving answer:', error)
-      }
-    } catch (error) {
-      console.error('Unexpected error saving answer:', error)
-    }
+    // Skip database operations from frontend to avoid RLS policy violations
+    // Answer saving is handled properly in the backend API routes with service role permissions
+    console.log('Answer updated for question:', questionId, answer)
+    
+    // The generatePrompt API call will handle saving all answers to the database
+    // using the service role key which bypasses RLS policies
   }
 
   const handleAnswerSelect = (questionId: string, selectedValue: string) => {
@@ -291,7 +315,11 @@ export default function PromptBuilder() {
       [questionId]: { ...prev[questionId], selected: selectedValue, custom: undefined }
     }))
     setShowCustomInput(prev => ({ ...prev, [questionId]: false }))
-    saveAnswer(questionId, { selected: selectedValue })
+    
+    // Only save if questions have been generated and we have dynamic questions
+    if (questionsGenerated && dynamicQuestions.length > 0) {
+      saveAnswer(questionId, { selected: selectedValue })
+    }
   }
 
   const handleCustomInput = (questionId: string, customValue: string) => {
@@ -299,7 +327,11 @@ export default function PromptBuilder() {
       ...prev, 
       [questionId]: { ...prev[questionId], custom: customValue, selected: undefined }
     }))
-    saveAnswer(questionId, { custom: customValue })
+    
+    // Only save if questions have been generated and we have dynamic questions
+    if (questionsGenerated && dynamicQuestions.length > 0) {
+      saveAnswer(questionId, { custom: customValue })
+    }
   }
 
   const toggleCustomInput = (questionId: string) => {
@@ -334,7 +366,7 @@ export default function PromptBuilder() {
         appIdea, 
         userId: user?.id || null, // Include user ID for proper saving
         answers: Object.entries(answers).map(([questionId, answer]) => {
-          const question = clarifyingQuestions.find(q => q.id === questionId)
+          const question = dynamicQuestions.find(q => q.id === questionId)
           return {
             question: question?.question || questionId,
             selectedAnswer: answer.custom || answer.selected || '',
@@ -387,8 +419,8 @@ export default function PromptBuilder() {
   }
 
   const canProceedToStep2 = appIdea.trim().length > 10
-  const canProceedToStep3 = Object.keys(answers).length === clarifyingQuestions.length && 
-    clarifyingQuestions.every(q => answers[q.id]?.selected || answers[q.id]?.custom)
+  const canProceedToStep3 = Object.keys(answers).length === dynamicQuestions.length && 
+    dynamicQuestions.every(q => answers[q.id]?.selected || answers[q.id]?.custom)
 
   const getQuestionIcon = (questionId: string) => {
     if (questionId === 'framework') return <Rocket className="h-5 w-5 text-gray-400" />
@@ -411,9 +443,13 @@ export default function PromptBuilder() {
                   currentStep >= step
                     ? 'border-black bg-black text-white'
                     : 'border-gray-200 bg-white text-gray-400'
-                } font-semibold text-base transition-all`}
+                } font-semibold text-base transition-all relative`}
               >
-                {stepIcons[idx]}
+                {currentStep === 2 && step === 2 && isGeneratingQuestions ? (
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                ) : (
+                  stepIcons[idx]
+                )}
               </div>
               {step < 3 && (
                 <div className="mx-2 h-0.5 w-8 bg-gray-200" />
@@ -566,12 +602,19 @@ export default function PromptBuilder() {
                   Back
                 </Button>
                 <Button
-                  onClick={() => setCurrentStep(2)}
-                  disabled={!canProceedToStep2}
+                  onClick={handleNext}
+                  disabled={!canProceedToStep2 || isGeneratingQuestions}
                   size="lg"
                   className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
                 >
-                  Continue
+                  {isGeneratingQuestions ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Generating Questions...
+                    </>
+                  ) : (
+                    'Continue'
+                  )}
                 </Button>
               </div>
             </CardContent>
@@ -585,130 +628,185 @@ export default function PromptBuilder() {
               <HelpCircle className="h-6 w-6 text-gray-400" />
               <h2 className="text-2xl font-bold text-gray-900">Let's configure your app</h2>
               <p className="text-base text-gray-500">
-                Don't worry if these seem technical - we'll explain everything and suggest the best options for your needs.
+                {isGeneratingQuestions 
+                  ? "Our AI is analyzing your app idea to generate personalized questions..."
+                  : "These questions are tailored specifically to your app idea. Don't worry if they seem technical - we'll explain everything and suggest the best options for your needs."
+                }
               </p>
+              {!isGeneratingQuestions && questionsGenerated && dynamicQuestions.length > 0 && (
+                <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
+                  <Sparkles className="h-4 w-4" />
+                  AI-generated questions for your app idea
+                </div>
+              )}
             </div>
-            <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-              {clarifyingQuestions.map((question) => {
-                const currentAnswer = answers[question.id]
-                const isCustomInputVisible = showCustomInput[question.id]
-                return (
-                  <Card key={question.id} className="rounded-xl border border-gray-200 bg-white shadow-none">
-                    <CardHeader className="flex flex-col items-start space-y-2 pb-2">
-                      <div className="flex items-center gap-2">
-                        {getQuestionIcon(question.id)}
-                        <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      {/* Predefined Options */}
-                      {question.options && (
-                        <div className="space-y-3">
-                          {question.options.map((option) => {
-                            const isSelected = currentAnswer?.selected === option.value
-                            return (
-                              <div
-                                key={option.value}
-                                className={`rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between gap-3 transition-all ${
-                                  isSelected ? 'ring-2 ring-black border-black' : 'hover:border-gray-300'
-                                }`}
-                              >
-                                <div className="flex-1">
-                                  <div className="font-medium text-base text-gray-900">{option.label}</div>
-                                  <div className="text-sm text-gray-500 mt-1">
-                                    {option.explanation}
-                                  </div>
-                                </div>
-                                <Button
-                                  onClick={() => handleAnswerSelect(question.id, option.value)}
-                                  size="sm"
-                                  variant={isSelected ? "default" : "outline"}
-                                  className={`rounded-md min-w-[80px] ${
-                                    isSelected 
-                                      ? 'bg-black text-white hover:bg-gray-900' 
-                                      : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+            
+            {isGeneratingQuestions ? (
+              <div className="w-full space-y-4">
+                <div className="flex justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[1, 2, 3, 4, 5, 6].map((i) => (
+                    <Card key={i} className="rounded-xl border border-gray-200 bg-white shadow-none">
+                      <CardHeader className="pb-2">
+                        <div className="flex items-center gap-2">
+                          <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
+                          <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4"></div>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        {[1, 2, 3].map((j) => (
+                          <div key={j} className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div className="flex-1 space-y-2">
+                                <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
+                                <div className="h-3 bg-gray-100 rounded animate-pulse w-full"></div>
+                              </div>
+                              <div className="h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="h-8 w-full bg-gray-100 rounded animate-pulse mt-3"></div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+                <div className="flex justify-center">
+                  <div className="text-sm text-gray-500 bg-blue-50 px-4 py-2 rounded-full border border-blue-200">
+                    🤖 AI is analyzing your app idea and creating personalized questions...
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
+                {dynamicQuestions.map((question) => {
+                  const currentAnswer = answers[question.id]
+                  const isCustomInputVisible = showCustomInput[question.id]
+                  return (
+                    <Card key={question.id} className="rounded-xl border border-gray-200 bg-white shadow-none">
+                      <CardHeader className="flex flex-col items-start space-y-2 pb-2">
+                        <div className="flex items-center gap-2">
+                          {getQuestionIcon(question.id)}
+                          <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-4">
+                        {/* Predefined Options */}
+                        {question.options && question.options.length > 0 && (
+                          <div className="space-y-3">
+                            {question.options.map((option) => {
+                              const isSelected = currentAnswer?.selected === option.value
+                              return (
+                                <div
+                                  key={option.value}
+                                  className={`rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between gap-3 transition-all ${
+                                    isSelected ? 'ring-2 ring-black border-black' : 'hover:border-gray-300'
                                   }`}
                                 >
-                                  {isSelected ? (
-                                    <>
-                                      <Check className="h-3 w-3 mr-1" />
-                                      Selected
-                                    </>
-                                  ) : (
-                                    'Select'
-                                  )}
-                                </Button>
-                              </div>
-                            )
-                          })}
-                        </div>
-                      )}
+                                  <div className="flex-1">
+                                    <div className="font-medium text-base text-gray-900">{option.label}</div>
+                                    <div className="text-sm text-gray-500 mt-1">
+                                      {option.explanation}
+                                    </div>
+                                  </div>
+                                  <Button
+                                    onClick={() => handleAnswerSelect(question.id, option.value)}
+                                    size="sm"
+                                    variant={isSelected ? "default" : "outline"}
+                                    className={`rounded-md min-w-[80px] ${
+                                      isSelected 
+                                        ? 'bg-black text-white hover:bg-gray-900' 
+                                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                                    }`}
+                                  >
+                                    {isSelected ? (
+                                      <>
+                                        <Check className="h-3 w-3 mr-1" />
+                                        Selected
+                                      </>
+                                    ) : (
+                                      'Select'
+                                    )}
+                                  </Button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        )}
 
-                      {/* Custom Input Toggle */}
-                      {question.allowCustom && (
-                        <div className="space-y-3">
-                          <Button
-                            onClick={() => toggleCustomInput(question.id)}
-                            variant="outline"
-                            size="sm"
-                            className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
-                          >
-                            {isCustomInputVisible ? (
-                              <>
-                                <X className="h-4 w-4 mr-2" />
-                                Hide Custom Input
-                              </>
-                            ) : (
-                              <>
-                                <Plus className="h-4 w-4 mr-2" />
-                                Add Custom Answer
-                              </>
+                        {/* Custom Input Toggle */}
+                        {question.allowCustom && (
+                          <div className="space-y-3">
+                            <Button
+                              onClick={() => toggleCustomInput(question.id)}
+                              variant="outline"
+                              size="sm"
+                              className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
+                            >
+                              {isCustomInputVisible ? (
+                                <>
+                                  <X className="h-4 w-4 mr-2" />
+                                  Hide Custom Input
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="h-4 w-4 mr-2" />
+                                  Add Custom Answer
+                                </>
+                              )}
+                            </Button>
+
+                            {isCustomInputVisible && (
+                              <Textarea
+                                placeholder={question.placeholder || "Enter your custom answer..."}
+                                value={currentAnswer?.custom || ''}
+                                onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                                className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
+                              />
                             )}
-                          </Button>
+                          </div>
+                        )}
 
-                          {isCustomInputVisible && (
-                            <Textarea
-                              placeholder={question.placeholder || "Enter your custom answer..."}
-                              value={currentAnswer?.custom || ''}
-                              onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                              className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                            />
-                          )}
-                        </div>
-                      )}
-
-                      {/* Input-only Questions */}
-                      {question.type === 'input' && (
-                        <Textarea
-                          placeholder={question.placeholder || "Enter your answer..."}
-                          value={currentAnswer?.custom || ''}
-                          onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                          className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                        />
-                      )}
-                    </CardContent>
-                  </Card>
-                )
-              })}
-            </div>
+                        {/* Input-only Questions */}
+                        {question.type === 'input' && (
+                          <Textarea
+                            placeholder={question.placeholder || "Enter your answer..."}
+                            value={currentAnswer?.custom || ''}
+                            onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                            className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
+                          />
+                        )}
+                      </CardContent>
+                    </Card>
+                  )
+                })}
+              </div>
+            )}
             <div className="flex justify-between w-full">
               <Button
                 variant="outline"
                 onClick={() => setCurrentStep(1)}
+                disabled={isGeneratingQuestions}
                 className="rounded-md px-6 py-2"
               >
                 Back
               </Button>
               <Button
                 onClick={generatePrompt}
-                disabled={!canProceedToStep3 || isGenerating}
+                disabled={!canProceedToStep3 || isGenerating || isGeneratingQuestions}
                 size="lg"
                 className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
               >
                 {isGenerating ? (
                   <>
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Generating...
+                    Generating Prompt...
+                  </>
+                ) : isGeneratingQuestions ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Loading Questions...
                   </>
                 ) : (
                   'Generate Prompt'
@@ -740,27 +838,19 @@ export default function PromptBuilder() {
                 </ol>
               </div>
               
-              {isLoading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
-              ) : (
-                <div className="relative">
-                  <Textarea
-                    value={generatedPrompt}
-                    readOnly
-                    className="min-h-[300px] text-sm bg-gray-50 border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                  />
-                  <Button
-                    onClick={copyToClipboard}
-                    className="absolute top-2 right-2 bg-black text-white rounded-md px-3 py-1 text-xs font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
-                  >
-                    Copy Instructions
-                  </Button>
-                </div>
-              )}
+              <div className="relative">
+                <Textarea
+                  value={generatedPrompt}
+                  readOnly
+                  className="min-h-[300px] text-sm bg-gray-50 border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
+                />
+                <Button
+                  onClick={copyToClipboard}
+                  className="absolute top-2 right-2 bg-black text-white rounded-md px-3 py-1 text-xs font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
+                >
+                  Copy Instructions
+                </Button>
+              </div>
               
               {/* AI Tools recommendation */}
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">

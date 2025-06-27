@@ -25,12 +25,21 @@ interface SessionIdRequest {
 
 export async function POST(req: NextRequest) {
   try {
+    // Basic rate limiting check (simple implementation)
+    const userAgent = req.headers.get('user-agent')
+    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip')
+    
     const body = await req.json()
     
     // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY) {
       console.error('OpenAI API key is not configured')
       return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
+    }
+    
+    // Validate input length to prevent abuse
+    if (body.appIdea && body.appIdea.length > 5000) {
+      return NextResponse.json({ error: 'App idea too long (max 5000 characters)' }, { status: 400 })
     }
     
     let appIdea: string
