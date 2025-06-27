@@ -1,0 +1,22 @@
+# Supabase Configuration
+NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+
+# OpenAI Configuration
+OPENAI_API_KEY=your-openai-api-key
+
+# Instructions:
+# 1. Copy this file and rename it to .env.local in the same directory
+# 2. Fill in your actual values from Supabase and OpenAI
+# 3. The .env.local file is already in .gitignore so your keys won't be committed
+
+# To get your Supabase credentials:
+# 1. Go to https://supabase.com/dashboard
+# 2. Create a new project or select existing one
+# 3. Go to Settings > API
+# 4. Copy the Project URL and anon/public key
+
+# To get your OpenAI API key:
+# 1. Go to https://platform.openai.com/api-keys
+# 2. Create a new API key
+# 3. Copy the key (starts with sk-) 
