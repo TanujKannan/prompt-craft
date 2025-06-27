@@ -198,7 +198,7 @@ export default function Home() {
                 Start Building My App
               </Button>
             </Link>
-          </div>
+        </div>
         </section>
       </main>
 
