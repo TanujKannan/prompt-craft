@@ -142,7 +142,7 @@ export default function About() {
                 <div>
                   <h3 className="text-xl font-semibold text-gray-900 mb-2">AI Builds Your App</h3>
                   <p className="text-gray-600">
-                    Copy our instructions and paste them into AI tools like Claude, ChatGPT, or Cursor. 
+                    Copy our instructions and paste them into AI tools like Claude, Lovable, or Replit. 
                     Watch as the AI writes the code and builds your app exactly as you envisioned.
                   </p>
                 </div>

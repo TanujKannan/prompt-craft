@@ -174,6 +174,8 @@ export default function PromptBuilder() {
   const [dynamicQuestions, setDynamicQuestions] = useState<ClarifyingQuestion[]>([])
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
   const [questionsGenerated, setQuestionsGenerated] = useState(false)
+  const [generatingStatus, setGeneratingStatus] = useState('')
+  const [generatedQuestionsPreview, setGeneratedQuestionsPreview] = useState<ClarifyingQuestion[]>([])
 
   // Check for template in localStorage on mount
   useEffect(() => {
@@ -232,6 +234,25 @@ export default function PromptBuilder() {
 
     console.log('Starting question generation for idea:', idea.substring(0, 50) + '...')
     setIsGeneratingQuestions(true)
+    setGeneratingStatus('🤖 AI is analyzing your app idea...')
+    setGeneratedQuestionsPreview([])
+    
+    // Simulate progressive question generation with status updates
+    const statusUpdates = [
+      '🧠 Understanding your app concept...',
+      '🔍 Identifying key technical decisions...',
+      '⚙️ Analyzing technology requirements...',
+      '📋 Crafting personalized questions...',
+      '✨ Finalizing recommendations...'
+    ]
+    
+    let statusIndex = 0
+    const statusInterval = setInterval(() => {
+      if (statusIndex < statusUpdates.length) {
+        setGeneratingStatus(statusUpdates[statusIndex])
+        statusIndex++
+      }
+    }, 1200)
     
     try {
       const response = await fetch('/api/generate-questions', {
@@ -253,6 +274,23 @@ export default function PromptBuilder() {
       
       if (data.questions && Array.isArray(data.questions)) {
         console.log('Setting dynamic questions:', data.questions.length, 'questions')
+        
+        // Clear status interval
+        clearInterval(statusInterval)
+        setGeneratingStatus('🎉 Questions generated! Loading them now...')
+        
+        // Simulate questions appearing one by one
+        const questions = data.questions
+        setGeneratedQuestionsPreview([])
+        
+        for (let i = 0; i < questions.length; i++) {
+          await new Promise(resolve => setTimeout(resolve, 300)) // 300ms delay between each question
+          setGeneratedQuestionsPreview(prev => [...prev, questions[i]])
+        }
+        
+        // Final delay before showing all questions
+        await new Promise(resolve => setTimeout(resolve, 500))
+        
         setDynamicQuestions(data.questions)
         setQuestionsGenerated(true)
         setAnswers({}) // Reset answers when new questions are generated
@@ -262,13 +300,18 @@ export default function PromptBuilder() {
         throw new Error('Invalid response format')
       }
     } catch (error) {
+      clearInterval(statusInterval)
       console.error('Error generating questions:', error)
       // Fallback to static questions if dynamic generation fails
       console.log('Falling back to static questions')
+      setGeneratingStatus('⚠️ Using fallback questions...')
+      await new Promise(resolve => setTimeout(resolve, 1000))
       setDynamicQuestions(clarifyingQuestions)
       setQuestionsGenerated(true)
     } finally {
+      clearInterval(statusInterval)
       setIsGeneratingQuestions(false)
+      setGeneratingStatus('')
       console.log('Question generation completed')
     }
   }
@@ -644,41 +687,117 @@ export default function PromptBuilder() {
             </div>
             
             {isGeneratingQuestions ? (
-              <div className="w-full space-y-4">
-                <div className="flex justify-center">
+              <div className="w-full space-y-6">
+                {/* Dynamic Status Updates */}
+                <div className="flex flex-col items-center space-y-4">
                   <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-black"></div>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {[1, 2, 3, 4, 5, 6].map((i) => (
-                    <Card key={i} className="rounded-xl border border-gray-200 bg-white shadow-none">
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center gap-2">
-                          <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
-                          <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4"></div>
-                        </div>
-                      </CardHeader>
-                      <CardContent className="space-y-3">
-                        {[1, 2, 3].map((j) => (
-                          <div key={j} className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
-                            <div className="flex items-center justify-between gap-3">
-                              <div className="flex-1 space-y-2">
-                                <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
-                                <div className="h-3 bg-gray-100 rounded animate-pulse w-full"></div>
-                              </div>
-                              <div className="h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
-                            </div>
-                          </div>
-                        ))}
-                        <div className="h-8 w-full bg-gray-100 rounded animate-pulse mt-3"></div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-                <div className="flex justify-center">
-                  <div className="text-sm text-gray-500 bg-blue-50 px-4 py-2 rounded-full border border-blue-200">
-                    🤖 AI is analyzing your app idea and creating personalized questions...
+                  <div className="text-base font-medium text-gray-700 bg-blue-50 px-4 py-2 rounded-full border border-blue-200">
+                    {generatingStatus}
                   </div>
                 </div>
+
+                {/* Progressive Question Generation */}
+                {generatedQuestionsPreview.length > 0 && (
+                  <div className="w-full space-y-4">
+                    <div className="text-center">
+                      <div className="text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200 inline-flex items-center gap-2">
+                        <Sparkles className="h-4 w-4" />
+                        Questions appearing as AI generates them...
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {generatedQuestionsPreview.map((question, index) => (
+                        <Card 
+                          key={question.id} 
+                          className="rounded-xl border border-gray-200 bg-white shadow-none animate-in slide-in-from-bottom-4 duration-500"
+                          style={{ animationDelay: `${index * 100}ms` }}
+                        >
+                          <CardHeader className="flex flex-col items-start space-y-2 pb-2">
+                            <div className="flex items-center gap-2">
+                              {getQuestionIcon(question.id)}
+                              <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
+                            </div>
+                          </CardHeader>
+                          <CardContent className="space-y-3">
+                            {question.options && question.options.slice(0, 2).map((option, optIndex) => (
+                              <div
+                                key={option.value}
+                                className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 animate-in fade-in duration-300"
+                                style={{ animationDelay: `${(index * 100) + (optIndex * 50)}ms` }}
+                              >
+                                <div className="font-medium text-sm text-gray-700">{option.label}</div>
+                                <div className="text-xs text-gray-500 mt-1 truncate">
+                                  {option.explanation.substring(0, 60)}...
+                                </div>
+                              </div>
+                            ))}
+                            {question.options && question.options.length > 2 && (
+                              <div className="text-xs text-gray-400 text-center">
+                                +{question.options.length - 2} more options
+                              </div>
+                            )}
+                            <div className="h-6 bg-gray-100 rounded animate-pulse"></div>
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Static skeleton for remaining questions if any */}
+                {generatedQuestionsPreview.length > 0 && generatedQuestionsPreview.length < 6 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {Array.from({ length: Math.max(0, 6 - generatedQuestionsPreview.length) }).map((_, i) => (
+                      <Card key={`skeleton-${i}`} className="rounded-xl border border-gray-200 bg-white shadow-none opacity-50">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
+                            <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4"></div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {[1, 2].map((j) => (
+                            <div key={j} className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                              <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2 mb-2"></div>
+                              <div className="h-3 bg-gray-100 rounded animate-pulse w-full"></div>
+                            </div>
+                          ))}
+                          <div className="h-6 bg-gray-100 rounded animate-pulse"></div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
+
+                {/* Initial skeleton if no questions generated yet */}
+                {generatedQuestionsPreview.length === 0 && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 opacity-30">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <Card key={i} className="rounded-xl border border-gray-200 bg-white shadow-none">
+                        <CardHeader className="pb-2">
+                          <div className="flex items-center gap-2">
+                            <div className="h-5 w-5 bg-gray-200 rounded animate-pulse"></div>
+                            <div className="h-5 bg-gray-200 rounded animate-pulse w-3/4"></div>
+                          </div>
+                        </CardHeader>
+                        <CardContent className="space-y-3">
+                          {[1, 2, 3].map((j) => (
+                            <div key={j} className="rounded-md border border-gray-100 bg-gray-50 px-3 py-2">
+                              <div className="flex items-center justify-between gap-3">
+                                <div className="flex-1 space-y-2">
+                                  <div className="h-4 bg-gray-200 rounded animate-pulse w-2/3"></div>
+                                  <div className="h-3 bg-gray-100 rounded animate-pulse w-full"></div>
+                                </div>
+                                <div className="h-8 w-16 bg-gray-200 rounded animate-pulse"></div>
+                              </div>
+                            </div>
+                          ))}
+                          <div className="h-8 w-full bg-gray-100 rounded animate-pulse mt-3"></div>
+                        </CardContent>
+                      </Card>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
