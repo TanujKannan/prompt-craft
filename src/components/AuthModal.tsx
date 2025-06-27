@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -30,6 +30,24 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
 
   const { signIn, signUp } = useAuth()
+
+  // Update mode when defaultMode prop changes
+  useEffect(() => {
+    setMode(defaultMode)
+  }, [defaultMode])
+
+  // Reset form and mode when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setMode(defaultMode)
+      setEmail('')
+      setPassword('')
+      setFullName('')
+      setError(null)
+      setLoading(false)
+      setShowEmailConfirmation(false)
+    }
+  }, [isOpen, defaultMode])
 
   const resetForm = () => {
     setEmail('')
