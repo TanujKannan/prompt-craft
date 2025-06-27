@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/lib/auth'
-import { Loader2, Mail } from 'lucide-react'
+import { Loader2, Mail, CheckCircle } from 'lucide-react'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -27,6 +27,7 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
   const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
 
   const { signIn, signUp } = useAuth()
 
@@ -36,6 +37,7 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
     setFullName('')
     setError(null)
     setLoading(false)
+    setShowEmailConfirmation(false)
   }
 
   const handleClose = () => {
@@ -54,9 +56,8 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
         if (error) {
           setError(error.message)
         } else {
-          // Success - show confirmation message
-          setError(null)
-          handleClose()
+          // Show email confirmation message instead of closing
+          setShowEmailConfirmation(true)
         }
       } else {
         const { error } = await signIn(email, password)
@@ -71,6 +72,72 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
     } finally {
       setLoading(false)
     }
+  }
+
+  // Email confirmation success view
+  if (showEmailConfirmation) {
+    return (
+      <Dialog open={isOpen} onOpenChange={handleClose}>
+        <DialogContent className="sm:max-w-[425px]">
+          <DialogHeader>
+            <div className="flex flex-col items-center space-y-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+              </div>
+              <div className="text-center">
+                <DialogTitle className="text-xl font-semibold text-gray-900">
+                  Check your email
+                </DialogTitle>
+                <DialogDescription className="text-gray-600 mt-2">
+                  We&apos;ve sent a confirmation link to <strong>{email}</strong>
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+              <h3 className="font-medium text-blue-900 mb-2">What&apos;s next?</h3>
+              <ol className="text-sm text-blue-800 space-y-1 list-decimal list-inside">
+                <li>Check your email inbox (and spam folder)</li>
+                <li>Click the confirmation link in the email</li>
+                <li>Come back here and sign in</li>
+              </ol>
+            </div>
+
+            <div className="text-sm text-gray-500 text-center">
+              Didn&apos;t receive the email? Check your spam folder or{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setShowEmailConfirmation(false)
+                  setMode('signup')
+                }}
+                className="text-blue-600 hover:underline font-medium"
+              >
+                try again
+              </button>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowEmailConfirmation(false)
+                  setMode('signin')
+                }}
+                className="flex-1"
+              >
+                Sign In Instead
+              </Button>
+              <Button onClick={handleClose} className="flex-1">
+                Got It
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
   }
 
   return (
