@@ -3,6 +3,21 @@ import OpenAI from 'openai'
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
+interface QuestionOption {
+  value: string
+  label: string
+  explanation: string
+}
+
+interface RawQuestion {
+  id?: string
+  question?: string
+  type?: string
+  options?: QuestionOption[]
+  placeholder?: string
+  allowCustom?: boolean
+}
+
 export async function POST(req: NextRequest) {
   try {
     const { appIdea } = await req.json()
@@ -86,7 +101,7 @@ Generate 4-6 smart clarifying questions that will help determine the best techni
       }
 
       // Ensure each question has required fields
-      const validatedQuestions = parsed.questions.map((q: any, index: number) => ({
+      const validatedQuestions = parsed.questions.map((q: RawQuestion, index: number) => ({
         id: q.id || `question_${index}`,
         question: q.question || 'What would you like to know?',
         type: q.type || 'both',

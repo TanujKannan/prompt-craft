@@ -15,7 +15,7 @@ export default function Home() {
               Turn your app ideas into working apps with AI
             </h1>
             <p className="text-base md:text-lg text-gray-500 max-w-2xl mx-auto">
-              Describe your app idea in plain English, and we'll create detailed instructions that AI coding tools can understand. No coding knowledge required - just your creativity!
+              Turn your app ideas into detailed, professional prompts that get you exactly what you want from AI coding tools like Cursor, Replit, and Lovable. No technical jargon &ndash; just clear, actionable instructions.
             </p>
             <div className="flex flex-col sm:flex-row gap-3 justify-center items-center pt-2">
               <Link href="/builder">

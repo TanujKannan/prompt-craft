@@ -1,6 +1,7 @@
 # Supabase Configuration
 NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 
 # OpenAI Configuration
 OPENAI_API_KEY=your-openai-api-key
@@ -14,7 +15,7 @@ OPENAI_API_KEY=your-openai-api-key
 # 1. Go to https://supabase.com/dashboard
 # 2. Create a new project or select existing one
 # 3. Go to Settings > API
-# 4. Copy the Project URL and anon/public key
+# 4. Copy the Project URL, anon/public key, and service_role key
 
 # To get your OpenAI API key:
 # 1. Go to https://platform.openai.com/api-keys

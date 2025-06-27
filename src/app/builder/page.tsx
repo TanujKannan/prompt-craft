@@ -1,15 +1,17 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { Skeleton } from '@/components/ui/skeleton'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { HelpCircle, Sparkles, Copy, ChevronLeft, ChevronRight, Loader2, BookOpen, ArrowRight, Check } from 'lucide-react'
+import { debounce } from 'lodash'
 import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import { promptTemplates, templateCategories, getTemplatesByCategory, getTemplateById, type PromptTemplate } from '@/lib/templates'
-import { Lightbulb, HelpCircle, Rocket, Database, Palette, UserCheck, Plus, X, Check, BookOpen, ArrowRight, Sparkles } from 'lucide-react'
-import { debounce } from 'lodash'
+import { Lightbulb, Rocket, Database, Palette, UserCheck, Plus, X } from 'lucide-react'
 
 interface ClarifyingQuestion {
   id: string
@@ -162,8 +164,8 @@ export default function PromptBuilder() {
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [appIdea, setAppIdea] = useState('')
-  const [answers, setAnswers] = useState<Record<string, { selected?: string; custom?: string }>>({})
-  const [sessionId, setSessionId] = useState<string | null>(null)
+  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [sessionId] = useState<string>(() => crypto.randomUUID())
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
   const [showCustomInput, setShowCustomInput] = useState<Record<string, boolean>>({})
@@ -630,7 +632,7 @@ export default function PromptBuilder() {
               <p className="text-base text-gray-500">
                 {isGeneratingQuestions 
                   ? "Our AI is analyzing your app idea to generate personalized questions..."
-                  : "These questions are tailored specifically to your app idea. Don't worry if they seem technical - we'll explain everything and suggest the best options for your needs."
+                  : "These questions are tailored specifically to your app idea. Don&apos;t worry if they seem technical - we&apos;ll explain everything and suggest the best options for your needs."
                 }
               </p>
               {!isGeneratingQuestions && questionsGenerated && dynamicQuestions.length > 0 && (

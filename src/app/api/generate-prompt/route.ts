@@ -10,26 +10,19 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY! // This bypasses RLS
 )
 
-interface DirectDataRequest {
-  appIdea: string
-  answers: Array<{
-    question: string
-    selectedAnswer: string
-    explanation: string
-  }>
-}
-
-interface SessionIdRequest {
-  sessionId: string
-}
-
-export async function POST(req: NextRequest) {
+export async function POST(request: Request) {
   try {
+    const body = await request.json()
+    const { appIdea, answers, sessionId } = body
+
+    // Validate input
+    if (!appIdea || !answers) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
     // Basic rate limiting check (simple implementation)
-    const userAgent = req.headers.get('user-agent')
-    const ip = req.headers.get('x-forwarded-for') || req.headers.get('x-real-ip')
-    
-    const body = await req.json()
+    const userAgent = request.headers.get('user-agent')
+    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip')
     
     // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY) {
@@ -38,19 +31,14 @@ export async function POST(req: NextRequest) {
     }
     
     // Validate input length to prevent abuse
-    if (body.appIdea && body.appIdea.length > 5000) {
+    if (appIdea && appIdea.length > 5000) {
       return NextResponse.json({ error: 'App idea too long (max 5000 characters)' }, { status: 400 })
     }
     
-    let appIdea: string
-    let answers: Array<{ question: string; selectedAnswer: string; explanation: string }>
-    let sessionId: string | null = null
     let userId: string | null = null
 
     // Check if this is a sessionId request or direct data request
-    if ('sessionId' in body) {
-      sessionId = body.sessionId
-      
+    if (sessionId) {
       if (!sessionId) {
         return NextResponse.json({ error: 'Session ID is required' }, { status: 400 })
       }
@@ -81,15 +69,8 @@ export async function POST(req: NextRequest) {
 
       appIdea = session.app_idea
       userId = session.user_id
-      answers = answersData.map(a => ({
-        question: a.question,
-        selectedAnswer: a.selected_answer,
-        explanation: a.explanation
-      }))
-    } else if ('appIdea' in body && 'answers' in body) {
+    } else {
       // Direct data submission - create a session for authenticated users
-      appIdea = body.appIdea
-      answers = body.answers
       userId = body.userId || null // Get userId from request body
       
       console.log('Received request body:', { appIdea: appIdea.substring(0, 50) + '...', userId, answersCount: answers.length })
@@ -137,8 +118,6 @@ export async function POST(req: NextRequest) {
         console.error('Error creating session:', error)
         // Continue without saving
       }
-    } else {
-      return NextResponse.json({ error: 'Either sessionId or appIdea+answers is required' }, { status: 400 })
     }
 
     // Validate that we have the required data
