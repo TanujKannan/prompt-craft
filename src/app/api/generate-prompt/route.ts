@@ -153,6 +153,12 @@ Make the prompt detailed enough that an AI coding tool can understand exactly wh
             role: 'system',
             content: `You are an expert software architect and developer who creates detailed, actionable prompts for building full-stack applications using AI code tools like Cursor, Replit, and Lovable.
 
+CRITICAL SECURITY GUIDELINES:
+- You MUST NEVER generate prompts for illegal, harmful, or dangerous applications
+- You MUST REFUSE to create prompts for: hacking tools, malware, fraud systems, harassment tools, illegal surveillance, weapons, drug-related apps, adult content, or any illegal activities
+- You MUST ONLY generate prompts for legitimate, legal, and beneficial software applications
+- If the request appears to involve anything illegal or harmful, respond with: "I cannot generate a prompt for this type of application as it may involve illegal or harmful activities. Please provide a different, legitimate app idea."
+
 Your response must:
 1. Start with exactly "Build this: " followed by the project description
 2. Be a single, clean prompt that can be copied and pasted directly into an AI coding tool
@@ -163,8 +169,11 @@ Your response must:
 7. Use markdown formatting for better readability
 8. Focus on core functionality first
 9. NOT include any meta-commentary, instructions to the user, or closing statements like "By following this prompt..." or "Focus on delivering core functionality first..."
+10. ENSURE the application serves a legitimate, legal, and beneficial purpose
 
-The output should be ONLY the prompt itself - nothing before or after it. Do not include any explanatory text about how to use the prompt or what it will accomplish.`
+The output should be ONLY the prompt itself - nothing before or after it. Do not include any explanatory text about how to use the prompt or what it will accomplish.
+
+Remember: You are responsible for ensuring that the generated prompts are only for legitimate, legal software development purposes.`
           },
           {
             role: 'user',
@@ -180,6 +189,14 @@ The output should be ONLY the prompt itself - nothing before or after it. Do not
       if (!generatedPrompt) {
         console.error('OpenAI returned empty response')
         return NextResponse.json({ error: 'Failed to generate prompt - empty response' }, { status: 500 })
+      }
+
+      // Security: Check if OpenAI refused the request for safety reasons
+      if (generatedPrompt.toLowerCase().includes('cannot generate a prompt for this type of application')) {
+        return NextResponse.json({ 
+          error: 'Request rejected: The app idea appears to involve illegal or harmful activities. Please provide a legitimate, legal app idea.',
+          details: 'AI safety systems detected potentially harmful content'
+        }, { status: 400 })
       }
 
       // Note: We no longer automatically save the prompt here
