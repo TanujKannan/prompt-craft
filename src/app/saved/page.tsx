@@ -35,13 +35,11 @@ export default function SavedPrompts() {
       setLoading(true)
     } else if (isRefresh) {
       setRefreshing(true)
-    } else {
-      setLoadingMore(true)
     }
 
     try {
-      const limit = isInitialLoad ? INITIAL_LOAD_COUNT : 1000 // Load all remaining on "Load More"
-      const offset = isInitialLoad ? 0 : prompts.length
+      const limit = INITIAL_LOAD_COUNT
+      const offset = 0
 
       // Get prompt sessions with their generated prompts
       const { data, error } = await supabase
@@ -69,30 +67,25 @@ export default function SavedPrompts() {
           created_at: session.created_at
         }))
 
-      if (isInitialLoad) {
-        // For initial load, get total count
-        const { data: allSessions, error: countError } = await supabase
-          .from('prompt_sessions')
-          .select(`
-            id,
-            generated_prompts (
-              id
-            )
-          `)
-          .eq('user_id', user.id)
+      // Get total count
+      const { data: allSessions, error: countError } = await supabase
+        .from('prompt_sessions')
+        .select(`
+          id,
+          generated_prompts (
+            id
+          )
+        `)
+        .eq('user_id', user.id)
 
-        const totalWithPrompts = countError ? formattedPrompts.length : 
-          (allSessions?.filter(session => 
-            session.generated_prompts && session.generated_prompts.length > 0
-          ).length || 0)
+      const totalWithPrompts = countError ? formattedPrompts.length : 
+        (allSessions?.filter(session => 
+          session.generated_prompts && session.generated_prompts.length > 0
+        ).length || 0)
 
-        setTotalCount(totalWithPrompts)
-        setPrompts(formattedPrompts)
-        setHasMore(formattedPrompts.length === INITIAL_LOAD_COUNT && totalWithPrompts > INITIAL_LOAD_COUNT)
-      } else {
-        setPrompts(prev => [...prev, ...formattedPrompts])
-        setHasMore(false)
-      }
+      setTotalCount(totalWithPrompts)
+      setPrompts(formattedPrompts)
+      setHasMore(formattedPrompts.length === INITIAL_LOAD_COUNT && totalWithPrompts > INITIAL_LOAD_COUNT)
     } catch (error) {
       // Silently handle errors - user doesn't need to see technical details
       setPrompts([])
@@ -103,11 +96,9 @@ export default function SavedPrompts() {
         setLoading(false)
       } else if (isRefresh) {
         setRefreshing(false)
-      } else {
-        setLoadingMore(false)
       }
     }
-  }, [user, prompts.length])
+  }, [user])
 
   useEffect(() => {
     if (!authLoading && user) {
@@ -117,17 +108,19 @@ export default function SavedPrompts() {
     }
   }, [user, authLoading, loadSavedPrompts])
 
-  // Handle page focus/visibility for refreshing data
+  // Handle page focus/visibility for refreshing data - simplified to avoid re-render loops
   useEffect(() => {
     const handleFocus = () => {
       if (user && !loading && !refreshing && !authLoading) {
-        loadSavedPrompts(true, true) // Refresh when page regains focus
+        // Call the function directly instead of using the memoized version
+        // to avoid dependency issues
+        refreshPrompts()
       }
     }
 
     const handleVisibilityChange = () => {
       if (!document.hidden && user && !loading && !refreshing && !authLoading) {
-        loadSavedPrompts(true, true) // Refresh when page becomes visible
+        refreshPrompts()
       }
     }
 
@@ -138,10 +131,52 @@ export default function SavedPrompts() {
       window.removeEventListener('focus', handleFocus)
       document.removeEventListener('visibilitychange', handleVisibilityChange)
     }
-  }, [user, loading, refreshing, authLoading, loadSavedPrompts])
+  }, [user, loading, refreshing, authLoading]) // Removed loadSavedPrompts dependency
 
   const refreshPrompts = async () => {
     await loadSavedPrompts(true, true)
+  }
+
+  const loadMorePrompts = async () => {
+    setLoadingMore(true)
+    
+    try {
+      const offset = prompts.length
+      const limit = 1000 // Load all remaining
+
+      // Get prompt sessions with their generated prompts
+      const { data, error } = await supabase
+        .from('prompt_sessions')
+        .select(`
+          id,
+          app_idea,
+          created_at,
+          generated_prompts (
+            prompt
+          )
+        `)
+        .eq('user_id', user?.id)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1)
+
+      if (error) throw error
+
+      const formattedPrompts = data
+        .filter(session => session.generated_prompts && session.generated_prompts.length > 0)
+        .map(session => ({
+          id: session.id,
+          app_idea: session.app_idea,
+          prompt: session.generated_prompts[0].prompt,
+          created_at: session.created_at
+        }))
+
+      setPrompts(prev => [...prev, ...formattedPrompts])
+      setHasMore(false) // After loading more, we've loaded everything
+    } catch (error) {
+      // Silently handle errors
+    } finally {
+      setLoadingMore(false)
+    }
   }
 
   const copyToClipboard = async (prompt: string) => {
@@ -288,7 +323,7 @@ export default function SavedPrompts() {
             {hasMore && (
               <div className="flex justify-center pt-4">
                 <Button
-                  onClick={() => loadSavedPrompts(false)}
+                  onClick={loadMorePrompts}
                   disabled={loadingMore}
                   variant="outline"
                   className="rounded-md px-6 py-2 font-medium flex items-center gap-2"
