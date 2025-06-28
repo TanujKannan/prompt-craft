@@ -207,6 +207,22 @@ export default function PromptBuilder() {
     setCurrentStep(1)
   }
 
+  // Reset all state for creating another app
+  const resetAllState = () => {
+    setSelectedTemplate(null)
+    setAppIdea('')
+    setAnswers({})
+    setGeneratedPrompt('')
+    setShowCustomInput({})
+    // Reset dynamic questions state
+    setDynamicQuestions([])
+    setIsGeneratingQuestions(false)
+    setQuestionsGenerated(false)
+    setGeneratingStatus('')
+    setGeneratedQuestionsPreview([])
+    setCurrentStep(0)
+  }
+
   // Get filtered templates
   const getFilteredTemplates = () => {
     if (selectedCategory === 'all') return promptTemplates
@@ -1001,7 +1017,7 @@ export default function PromptBuilder() {
                   Back to Questions
                 </Button>
                 <Button
-                  onClick={() => setCurrentStep(0)}
+                  onClick={resetAllState}
                   variant="outline"
                   className="rounded-md px-6 py-2"
                 >

@@ -10,8 +10,114 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY! // This bypasses RLS
 )
 
+// Rate limiting configuration
+const RATE_LIMIT_WINDOW_MINUTES = 15
+const MAX_REQUESTS_PER_WINDOW = 10
+
+// Database-based rate limiting function
+const checkRateLimit = async (identifier: string): Promise<{ allowed: boolean; resetTime: number; remaining: number }> => {
+  const now = new Date()
+  const windowStart = new Date(now.getTime() - (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000))
+  
+  try {
+    // Clean up old entries and count recent requests in a single query
+    const { data: recentRequests, error } = await supabase
+      .from('rate_limits')
+      .select('id')
+      .eq('identifier', identifier)
+      .gte('created_at', windowStart.toISOString())
+      .order('created_at', { ascending: false })
+
+    if (error) {
+      console.error('Rate limit check error:', error)
+      // Fail open - allow request if we can't check rate limit
+      return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
+    }
+
+    const requestCount = recentRequests?.length || 0
+    
+    if (requestCount >= MAX_REQUESTS_PER_WINDOW) {
+      // Find the oldest request to determine reset time
+      const oldestRequest = recentRequests[recentRequests.length - 1]
+      const resetTime = new Date(oldestRequest.created_at).getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000)
+      
+      return {
+        allowed: false,
+        resetTime,
+        remaining: 0
+      }
+    }
+
+    // Record this request
+    const { error: insertError } = await supabase
+      .from('rate_limits')
+      .insert({
+        identifier,
+        created_at: now.toISOString()
+      })
+
+    if (insertError) {
+      console.error('Failed to record rate limit:', insertError)
+      // Fail open
+      return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
+    }
+
+    // Clean up old entries (best effort, don't fail if this doesn't work)
+    supabase
+      .from('rate_limits')
+      .delete()
+      .lt('created_at', windowStart.toISOString())
+      .then(() => console.log('Cleaned up old rate limit entries'))
+      .catch(err => console.warn('Failed to clean up rate limits:', err))
+
+    return {
+      allowed: true,
+      resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000),
+      remaining: MAX_REQUESTS_PER_WINDOW - requestCount - 1
+    }
+  } catch (error) {
+    console.error('Rate limiting error:', error)
+    // Fail open - allow request if rate limiting fails
+    return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
+  }
+}
+
 export async function POST(request: Request) {
   try {
+    // Extract IP address for rate limiting
+    const forwarded = request.headers.get('x-forwarded-for')
+    const realIp = request.headers.get('x-real-ip')
+    const ip = forwarded ? forwarded.split(',')[0].trim() : realIp || 'unknown'
+    
+    // Create a unique identifier for rate limiting
+    const userAgent = request.headers.get('user-agent') || ''
+    const identifier = `${ip}:${userAgent.slice(0, 50)}`
+    
+    // Check rate limit
+    const rateLimit = await checkRateLimit(identifier)
+    
+    if (!rateLimit.allowed) {
+      const resetDate = new Date(rateLimit.resetTime)
+      const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
+      
+      return NextResponse.json(
+        { 
+          error: 'Rate limit exceeded. Please try again later.',
+          retryAfter: retryAfter,
+          resetTime: resetDate.toISOString()
+        }, 
+        { 
+          status: 429,
+          headers: {
+            'Retry-After': retryAfter.toString(),
+            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
+            'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+            'X-RateLimit-Reset': rateLimit.resetTime.toString()
+          }
+        }
+      )
+    }
+
     const body = await request.json()
     const { appIdea, answers, sessionId } = body
 
@@ -20,10 +126,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    // Basic rate limiting check (simple implementation)
-    const userAgent = request.headers.get('user-agent')
-    const ip = request.headers.get('x-forwarded-for') || request.headers.get('x-real-ip')
-    
     // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY) {
       console.error('OpenAI API key is not configured')
@@ -208,7 +310,16 @@ The output should be ONLY the prompt itself - nothing before or after it. Do not
         console.log('No session ID available, prompt not saved to database')
       }
 
-      return NextResponse.json({ prompt: generatedPrompt })
+      return NextResponse.json(
+        { prompt: generatedPrompt },
+        {
+          headers: {
+            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
+            'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+            'X-RateLimit-Reset': rateLimit.resetTime.toString()
+          }
+        }
+      )
     } catch (openaiError) {
       console.error('OpenAI API error:', openaiError)
       return NextResponse.json({ 
