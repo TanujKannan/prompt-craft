@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Sparkles, User, LogOut, Settings, Menu, X } from 'lucide-react'
@@ -12,6 +12,25 @@ export default function Header() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const dropdownRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowUserDropdown(false)
+      }
+    }
+
+    if (showUserDropdown) {
+      document.addEventListener('mousedown', handleClickOutside)
+    }
+
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [showUserDropdown])
 
   const handleSignInClick = () => {
     setAuthMode('signin')
@@ -24,8 +43,13 @@ export default function Header() {
   }
 
   const handleSignOut = async () => {
-    await signOut()
-    setShowMobileMenu(false)
+    try {
+      await signOut()
+      setShowMobileMenu(false)
+      setShowUserDropdown(false)
+    } catch (error) {
+      console.error('Error signing out:', error)
+    }
   }
 
   const getUserDisplayName = () => {
@@ -95,32 +119,40 @@ export default function Header() {
                     Start Building
                   </Button>
                 </Link>
-                <div className="relative group">
-                  <Button variant="ghost" size="sm" className="flex items-center space-x-2">
+                <div className="relative" ref={dropdownRef}>
+                  <Button 
+                    variant="ghost" 
+                    size="sm" 
+                    className="flex items-center space-x-2"
+                    onClick={() => setShowUserDropdown(!showUserDropdown)}
+                  >
                     <User className="h-4 w-4" />
                     <span className="text-sm font-medium">{getUserDisplayName()}</span>
                   </Button>
-                  <div className="absolute right-0 top-full mt-2 w-48 bg-background border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
-                    <div className="py-1">
-                      <div className="px-3 py-2 text-xs text-muted-foreground border-b">
-                        {user.email}
+                  {showUserDropdown && (
+                    <div className="absolute right-0 top-full mt-2 w-48 bg-background border rounded-md shadow-lg z-50">
+                      <div className="py-1">
+                        <div className="px-3 py-2 text-xs text-muted-foreground border-b">
+                          {user.email}
+                        </div>
+                        <Link 
+                          href="/saved"
+                          className="flex items-center px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                          onClick={() => setShowUserDropdown(false)}
+                        >
+                          <Settings className="h-4 w-4 mr-2" />
+                          Saved Prompts
+                        </Link>
+                        <button
+                          onClick={handleSignOut}
+                          className="flex items-center w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                        >
+                          <LogOut className="h-4 w-4 mr-2" />
+                          Sign out
+                        </button>
                       </div>
-                      <Link 
-                        href="/saved"
-                        className="flex items-center px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                      >
-                        <Settings className="h-4 w-4 mr-2" />
-                        Saved Prompts
-                      </Link>
-                      <button
-                        onClick={handleSignOut}
-                        className="flex items-center w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
-                      >
-                        <LogOut className="h-4 w-4 mr-2" />
-                        Sign out
-                      </button>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
             ) : (
