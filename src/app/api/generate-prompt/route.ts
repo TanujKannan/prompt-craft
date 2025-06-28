@@ -10,75 +10,51 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY! // This bypasses RLS
 )
 
-// Rate limiting configuration
-const RATE_LIMIT_WINDOW_MINUTES = 15
+// Simple in-memory rate limiting
+const RATE_LIMIT_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
 const MAX_REQUESTS_PER_WINDOW = 10
+const requestCounts = new Map<string, { count: number; resetTime: number }>()
 
-// Database-based rate limiting function
-const checkRateLimit = async (identifier: string): Promise<{ allowed: boolean; resetTime: number; remaining: number }> => {
-  const now = new Date()
-  const windowStart = new Date(now.getTime() - (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000))
+// Clean up old entries periodically
+const cleanupOldEntries = () => {
+  const now = Date.now()
+  for (const [key, value] of requestCounts.entries()) {
+    if (now > value.resetTime) {
+      requestCounts.delete(key)
+    }
+  }
+}
+
+const checkRateLimit = (identifier: string): { allowed: boolean; remaining: number; resetTime: number } => {
+  const now = Date.now()
   
-  try {
-    // Clean up old entries and count recent requests in a single query
-    const { data: recentRequests, error } = await supabase
-      .from('rate_limits')
-      .select('id')
-      .eq('identifier', identifier)
-      .gte('created_at', windowStart.toISOString())
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Rate limit check error:', error)
-      // Fail open - allow request if we can't check rate limit
-      return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
-    }
-
-    const requestCount = recentRequests?.length || 0
-    
-    if (requestCount >= MAX_REQUESTS_PER_WINDOW) {
-      // Find the oldest request to determine reset time
-      const oldestRequest = recentRequests[recentRequests.length - 1]
-      const resetTime = new Date(oldestRequest.created_at).getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000)
-      
-      return {
-        allowed: false,
-        resetTime,
-        remaining: 0
-      }
-    }
-
-    // Record this request
-    const { error: insertError } = await supabase
-      .from('rate_limits')
-      .insert({
-        identifier,
-        created_at: now.toISOString()
-      })
-
-    if (insertError) {
-      console.error('Failed to record rate limit:', insertError)
-      // Fail open
-      return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
-    }
-
-    // Clean up old entries (best effort, don't fail if this doesn't work)
-    supabase
-      .from('rate_limits')
-      .delete()
-      .lt('created_at', windowStart.toISOString())
-      .then(() => console.log('Cleaned up old rate limit entries'))
-      .catch(err => console.warn('Failed to clean up rate limits:', err))
-
-    return {
-      allowed: true,
-      resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000),
-      remaining: MAX_REQUESTS_PER_WINDOW - requestCount - 1
-    }
-  } catch (error) {
-    console.error('Rate limiting error:', error)
-    // Fail open - allow request if rate limiting fails
-    return { allowed: true, resetTime: now.getTime() + (RATE_LIMIT_WINDOW_MINUTES * 60 * 1000), remaining: MAX_REQUESTS_PER_WINDOW - 1 }
+  // Clean up old entries occasionally (roughly 1 in 20 requests)
+  if (Math.random() < 0.05) {
+    cleanupOldEntries()
+  }
+  
+  const existing = requestCounts.get(identifier)
+  
+  if (!existing || now > existing.resetTime) {
+    // First request or window has expired
+    const resetTime = now + RATE_LIMIT_WINDOW_MS
+    requestCounts.set(identifier, { count: 1, resetTime })
+    return { allowed: true, remaining: MAX_REQUESTS_PER_WINDOW - 1, resetTime }
+  }
+  
+  if (existing.count >= MAX_REQUESTS_PER_WINDOW) {
+    // Rate limit exceeded
+    return { allowed: false, remaining: 0, resetTime: existing.resetTime }
+  }
+  
+  // Increment count
+  existing.count += 1
+  requestCounts.set(identifier, existing)
+  
+  return { 
+    allowed: true, 
+    remaining: MAX_REQUESTS_PER_WINDOW - existing.count, 
+    resetTime: existing.resetTime 
   }
 }
 
@@ -89,22 +65,19 @@ export async function POST(request: Request) {
     const realIp = request.headers.get('x-real-ip')
     const ip = forwarded ? forwarded.split(',')[0].trim() : realIp || 'unknown'
     
-    // Create a unique identifier for rate limiting
-    const userAgent = request.headers.get('user-agent') || ''
-    const identifier = `${ip}:${userAgent.slice(0, 50)}`
+    // Create identifier for rate limiting (IP-based)
+    const identifier = ip
     
     // Check rate limit
-    const rateLimit = await checkRateLimit(identifier)
+    const rateLimit = checkRateLimit(identifier)
     
     if (!rateLimit.allowed) {
-      const resetDate = new Date(rateLimit.resetTime)
       const retryAfter = Math.ceil((rateLimit.resetTime - Date.now()) / 1000)
       
       return NextResponse.json(
         { 
           error: 'Rate limit exceeded. Please try again later.',
-          retryAfter: retryAfter,
-          resetTime: resetDate.toISOString()
+          retryAfter: retryAfter
         }, 
         { 
           status: 429,
@@ -112,7 +85,7 @@ export async function POST(request: Request) {
             'Retry-After': retryAfter.toString(),
             'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
             'X-RateLimit-Remaining': rateLimit.remaining.toString(),
-            'X-RateLimit-Reset': rateLimit.resetTime.toString()
+            'X-RateLimit-Reset': Math.floor(rateLimit.resetTime / 1000).toString()
           }
         }
       )
@@ -316,7 +289,7 @@ The output should be ONLY the prompt itself - nothing before or after it. Do not
           headers: {
             'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
             'X-RateLimit-Remaining': rateLimit.remaining.toString(),
-            'X-RateLimit-Reset': rateLimit.resetTime.toString()
+            'X-RateLimit-Reset': Math.floor(rateLimit.resetTime / 1000).toString()
           }
         }
       )
