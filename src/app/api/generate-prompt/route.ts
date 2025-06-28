@@ -92,7 +92,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { appIdea, answers, sessionId } = body
+    const { appIdea, answers } = body
 
     // Validate input
     if (!appIdea || !answers) {
@@ -108,91 +108,6 @@ export async function POST(request: Request) {
     // Validate input length to prevent abuse
     if (appIdea && appIdea.length > 5000) {
       return NextResponse.json({ error: 'App idea too long (max 5000 characters)' }, { status: 400 })
-    }
-    
-    let userId: string | null = null
-
-    // Check if this is a sessionId request or direct data request
-    if (sessionId) {
-      if (!sessionId) {
-        return NextResponse.json({ error: 'Session ID is required' }, { status: 400 })
-      }
-
-      // Get the app idea from the session
-      const { data: session, error: sessionError } = await supabase
-        .from('prompt_sessions')
-        .select('app_idea, user_id')
-        .eq('id', sessionId)
-        .single()
-
-      if (sessionError || !session) {
-        console.error('Session not found:', sessionError)
-        return NextResponse.json({ error: 'Session not found' }, { status: 404 })
-      }
-
-      // Get the clarifying answers
-      const { data: answersData, error: answersError } = await supabase
-        .from('clarifying_answers')
-        .select('question, selected_answer, explanation')
-        .eq('session_id', sessionId)
-        .order('created_at', { ascending: true })
-
-      if (answersError) {
-        console.error('Failed to fetch answers:', answersError)
-        return NextResponse.json({ error: 'Failed to fetch answers' }, { status: 500 })
-      }
-
-      appIdea = session.app_idea
-      userId = session.user_id
-    } else {
-      // Direct data submission - create a session for authenticated users
-      userId = body.userId || null // Get userId from request body
-      
-      console.log('Received request body:', { appIdea: appIdea.substring(0, 50) + '...', userId, answersCount: answers.length })
-      console.log('User ID from request:', userId)
-      
-      // Create a new session for this prompt generation
-      try {
-        const { data: newSession, error: createError } = await supabase
-          .from('prompt_sessions')
-          .insert({
-            app_idea: appIdea,
-            user_id: userId // This will now properly use the authenticated user's ID
-          })
-          .select()
-          .single()
-
-        if (createError) {
-          console.error('Failed to create session:', createError)
-          // Continue without saving - user still gets their prompt
-        } else {
-          sessionId = newSession.id
-          console.log('Created session with user_id:', userId, 'session_id:', sessionId)
-          
-          // Save the clarifying answers
-          if (answers.length > 0) {
-            const answerInserts = answers.map(answer => ({
-              session_id: sessionId,
-              question: answer.question,
-              selected_answer: answer.selectedAnswer,
-              explanation: answer.explanation
-            }))
-
-            const { error: answersError } = await supabase
-              .from('clarifying_answers')
-              .insert(answerInserts)
-
-            if (answersError) {
-              console.error('Failed to save answers:', answersError)
-            } else {
-              console.log('Successfully saved answers for session:', sessionId)
-            }
-          }
-        }
-      } catch (error) {
-        console.error('Error creating session:', error)
-        // Continue without saving
-      }
     }
 
     // Validate that we have the required data
@@ -267,21 +182,8 @@ The output should be ONLY the prompt itself - nothing before or after it. Do not
         return NextResponse.json({ error: 'Failed to generate prompt - empty response' }, { status: 500 })
       }
 
-      // Save the generated prompt to Supabase if we have a sessionId
-      if (sessionId) {
-        try {
-          await supabase.from('generated_prompts').insert({
-            session_id: sessionId,
-            prompt: generatedPrompt,
-          })
-          console.log('Successfully saved generated prompt to database')
-        } catch (error) {
-          console.error('Error saving generated prompt to database:', error)
-          // Continue anyway - the user still gets their prompt
-        }
-      } else {
-        console.log('No session ID available, prompt not saved to database')
-      }
+      // Note: We no longer automatically save the prompt here
+      // Users must explicitly choose to save via the save-prompt endpoint
 
       return NextResponse.json(
         { prompt: generatedPrompt },

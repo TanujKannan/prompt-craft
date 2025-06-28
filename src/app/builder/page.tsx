@@ -176,6 +176,9 @@ export default function PromptBuilder() {
   const [questionsGenerated, setQuestionsGenerated] = useState(false)
   const [generatingStatus, setGeneratingStatus] = useState('')
   const [generatedQuestionsPreview, setGeneratedQuestionsPreview] = useState<ClarifyingQuestion[]>([])
+  const [copied, setCopied] = useState(false)
+  const [isSaving, setIsSaving] = useState(false)
+  const [promptSaved, setPromptSaved] = useState(false)
 
   // Check for template in localStorage on mount
   useEffect(() => {
@@ -220,6 +223,9 @@ export default function PromptBuilder() {
     setQuestionsGenerated(false)
     setGeneratingStatus('')
     setGeneratedQuestionsPreview([])
+    setCopied(false)
+    setIsSaving(false)
+    setPromptSaved(false)
     setCurrentStep(0)
   }
 
@@ -236,7 +242,6 @@ export default function PromptBuilder() {
       
       // Skip database operations from frontend to avoid RLS policy violations
       // Session creation is handled properly in the backend API routes
-      console.log('App idea updated:', idea.substring(0, 50) + '...')
       
       // Just update local state - no database operations needed here
       // The backend API routes handle session creation with proper service role permissions
@@ -248,7 +253,6 @@ export default function PromptBuilder() {
   const generateDynamicQuestions = async (idea: string) => {
     if (!idea.trim()) return
 
-    console.log('Starting question generation for idea:', idea.substring(0, 50) + '...')
     setIsGeneratingQuestions(true)
     setGeneratingStatus('🤖 AI is analyzing your app idea...')
     setGeneratedQuestionsPreview([])
@@ -277,8 +281,6 @@ export default function PromptBuilder() {
         body: JSON.stringify({ appIdea: idea })
       })
 
-      console.log('Question generation response status:', response.status)
-
       if (!response.ok) {
         const errorData = await response.json()
         console.error('Question generation failed:', errorData)
@@ -286,11 +288,8 @@ export default function PromptBuilder() {
       }
 
       const data = await response.json()
-      console.log('Question generation response data:', data)
       
       if (data.questions && Array.isArray(data.questions)) {
-        console.log('Setting dynamic questions:', data.questions.length, 'questions')
-        
         // Clear status interval
         clearInterval(statusInterval)
         setGeneratingStatus('🎉 Questions generated! Loading them now...')
@@ -319,7 +318,6 @@ export default function PromptBuilder() {
       clearInterval(statusInterval)
       console.error('Error generating questions:', error)
       // Fallback to static questions if dynamic generation fails
-      console.log('Falling back to static questions')
       setGeneratingStatus('⚠️ Using fallback questions...')
       await new Promise(resolve => setTimeout(resolve, 1000))
       setDynamicQuestions(clarifyingQuestions)
@@ -328,7 +326,6 @@ export default function PromptBuilder() {
       clearInterval(statusInterval)
       setIsGeneratingQuestions(false)
       setGeneratingStatus('')
-      console.log('Question generation completed')
     }
   }
 
@@ -364,7 +361,6 @@ export default function PromptBuilder() {
   const saveAnswer = async (questionId: string, answer: { selected?: string; custom?: string }) => {
     // Skip database operations from frontend to avoid RLS policy violations
     // Answer saving is handled properly in the backend API routes with service role permissions
-    console.log('Answer updated for question:', questionId, answer)
     
     // The generatePrompt API call will handle saving all answers to the database
     // using the service role key which bypasses RLS policies
@@ -418,11 +414,7 @@ export default function PromptBuilder() {
         throw new Error('Please answer the clarifying questions first')
       }
 
-      console.log('Current user when generating prompt:', user)
-      console.log('User ID being sent:', user?.id)
-
       // Always send data directly to avoid session issues
-      // This ensures the app works even if database saving failed
       const requestBody = { 
         appIdea, 
         userId: user?.id || null, // Include user ID for proper saving
@@ -437,8 +429,6 @@ export default function PromptBuilder() {
           }
         })
       }
-
-      console.log('Sending request to generate prompt:', requestBody)
 
       const response = await fetch('/api/generate-prompt', {
         method: 'POST',
@@ -473,9 +463,55 @@ export default function PromptBuilder() {
   const copyToClipboard = async () => {
     try {
       await navigator.clipboard.writeText(generatedPrompt)
-      // You could add a toast notification here
+      setCopied(true)
+      // Reset the copied state after 2 seconds
+      setTimeout(() => setCopied(false), 2000)
     } catch (error) {
       console.error('Failed to copy:', error)
+    }
+  }
+
+  const savePrompt = async () => {
+    if (!user || !generatedPrompt) return
+
+    setIsSaving(true)
+    try {
+      const requestBody = { 
+        appIdea, 
+        userId: user.id,
+        answers: Object.entries(answers).map(([questionId, answer]) => {
+          const question = dynamicQuestions.find(q => q.id === questionId)
+          return {
+            question: question?.question || questionId,
+            selectedAnswer: answer.custom || answer.selected || '',
+            explanation: answer.selected 
+              ? question?.options?.find(opt => opt.value === answer.selected)?.explanation
+              : 'Custom input provided by user'
+          }
+        }),
+        prompt: generatedPrompt
+      }
+
+      const response = await fetch('/api/save-prompt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to save prompt')
+      }
+
+      setPromptSaved(true)
+      // Reset the saved state after 3 seconds
+      setTimeout(() => setPromptSaved(false), 3000)
+    } catch (error) {
+      console.error('Error saving prompt:', error)
+      alert('Failed to save prompt. Please try again.')
+    } finally {
+      setIsSaving(false)
     }
   }
 
@@ -983,12 +1019,85 @@ export default function PromptBuilder() {
                 />
                 <Button
                   onClick={copyToClipboard}
-                  className="absolute top-2 right-2 bg-black text-white rounded-md px-3 py-1 text-xs font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
+                  className={`absolute top-2 right-2 rounded-md px-3 py-1 text-xs font-medium shadow hover:shadow-md transition ${
+                    copied 
+                      ? 'bg-green-600 text-white hover:bg-green-700' 
+                      : 'bg-black text-white hover:bg-gray-900'
+                  }`}
                 >
-                  Copy Instructions
+                  {copied ? (
+                    <>
+                      <Check className="h-3 w-3 mr-1" />
+                      Copied!
+                    </>
+                  ) : (
+                    'Copy Instructions'
+                  )}
                 </Button>
               </div>
-              
+
+              {/* Save Prompt Section - Only for authenticated users */}
+              {user && (
+                <div className="p-4 bg-yellow-50 rounded-lg border border-yellow-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-yellow-800 mb-1">Save this prompt?</h3>
+                      <p className="text-sm text-yellow-700">
+                        Save this prompt to your account so you can access it later from the Saved Prompts page.
+                      </p>
+                    </div>
+                    <Button
+                      onClick={savePrompt}
+                      disabled={isSaving || promptSaved}
+                      className={`ml-4 rounded-md px-4 py-2 text-sm font-medium shadow hover:shadow-md transition ${
+                        promptSaved
+                          ? 'bg-green-600 text-white hover:bg-green-700'
+                          : 'bg-yellow-600 text-white hover:bg-yellow-700'
+                      }`}
+                    >
+                      {isSaving ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                          Saving...
+                        </>
+                      ) : promptSaved ? (
+                        <>
+                          <Check className="h-4 w-4 mr-2" />
+                          Saved!
+                        </>
+                      ) : (
+                        'Save Prompt'
+                      )}
+                    </Button>
+                  </div>
+                  {promptSaved && (
+                    <div className="mt-3 text-sm text-green-700 bg-green-50 px-3 py-2 rounded-md border border-green-200">
+                      ✓ Prompt saved successfully! You can view it anytime in your <a href="/saved" className="underline font-medium">Saved Prompts</a>.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Sign in prompt for non-authenticated users */}
+              {!user && (
+                <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="font-semibold text-blue-800 mb-1">Want to save this prompt?</h3>
+                      <p className="text-sm text-blue-700">
+                        Sign in to save your prompts and access them anytime from any device.
+                      </p>
+                    </div>
+                    <Button
+                      asChild
+                      className="ml-4 bg-blue-600 text-white hover:bg-blue-700 rounded-md px-4 py-2 text-sm font-medium shadow hover:shadow-md transition"
+                    >
+                      <a href="/saved">Sign In to Save</a>
+                    </Button>
+                  </div>
+                </div>
+              )}
+
               {/* AI Tools recommendation */}
               <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
                 <h3 className="font-semibold text-blue-800 mb-2">Recommended AI tools to try:</h3>
