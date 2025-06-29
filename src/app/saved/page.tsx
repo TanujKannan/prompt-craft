@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
 import AuthModal from '@/components/AuthModal'
-import { Lock, ChevronDown, Loader2, RefreshCw } from 'lucide-react'
+import { Lock, RefreshCw, AlertTriangle } from 'lucide-react'
 
 interface SavedPrompt {
   id: string
@@ -16,162 +15,89 @@ interface SavedPrompt {
   created_at: string
 }
 
-const INITIAL_LOAD_COUNT = 3
-
 export default function SavedPrompts() {
   const { user, loading: authLoading } = useAuth()
   const [prompts, setPrompts] = useState<SavedPrompt[]>([])
-  const [loading, setLoading] = useState(true)
-  const [loadingMore, setLoadingMore] = useState(false)
-  const [refreshing, setRefreshing] = useState(false)
+  const [loading, setLoading] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [hasMore, setHasMore] = useState(false)
-  const [totalCount, setTotalCount] = useState(0)
-  const fetchIdRef = useRef(0)
+  const [error, setError] = useState<string | null>(null)
 
-  const loadSavedPrompts = useCallback(async (currentUser: typeof user, isInitialLoad = false, isRefresh = false) => {
-    if (!currentUser) return
+  // Load prompts by fetching them through our dedicated API route. This avoids
+  // running the heavy join in the browser and keeps the RLS-bypass on the
+  // server only.
+  const loadPrompts = async () => {
+    if (!user?.id) return
 
-    const currentFetchId = ++fetchIdRef.current
-
-    if (isInitialLoad) {
-      setLoading(true)
-      setPrompts([])
-      setTotalCount(0)
-    } else if (isRefresh) {
-      setRefreshing(true)
-    }
+    setLoading(true)
+    setError(null)
 
     try {
-      const limit = INITIAL_LOAD_COUNT
-      const offset = 0
+      const res = await fetch('/api/get-saved-prompts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: user.id }),
+      })
 
-      const { data, error } = await supabase
-        .from('prompt_sessions')
-        .select(`
-          id,
-          app_idea,
-          created_at,
-          generated_prompts (
-            prompt
-          )
-        `)
-        .eq('user_id', currentUser.id)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1)
+      const json = await res.json()
 
-      if (error) throw error
+      if (!res.ok) throw new Error(json.error || 'Failed to load prompts')
 
-      const formattedPrompts = (data || [])
-        .filter(session => session.generated_prompts && session.generated_prompts.length > 0)
-        .map(session => ({
-          id: session.id,
-          app_idea: session.app_idea,
-          prompt: session.generated_prompts[0].prompt,
-          created_at: session.created_at
-        }))
-
-      const { data: allSessions } = await supabase
-        .from('prompt_sessions')
-        .select(`id, generated_prompts(id)`)  // lighter count query
-        .eq('user_id', currentUser.id)
-
-      if (fetchIdRef.current !== currentFetchId) return // stale response
-
-      const totalWithPrompts = (allSessions || []).filter(s => s.generated_prompts && s.generated_prompts.length > 0).length
-
-      setTotalCount(totalWithPrompts)
-      setPrompts(formattedPrompts)
-      setHasMore(formattedPrompts.length === INITIAL_LOAD_COUNT && totalWithPrompts > INITIAL_LOAD_COUNT)
-    } catch (error) {
-      if (fetchIdRef.current !== currentFetchId) return // ignore errors from stale
+      setPrompts(json.prompts || [])
+    } catch (err) {
+      console.error('Failed to load prompts:', err)
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setError(message)
       setPrompts([])
-      setTotalCount(0)
-      setHasMore(false)
     } finally {
-      if (fetchIdRef.current !== currentFetchId) return
-      if (isInitialLoad) setLoading(false)
-      if (isRefresh) setRefreshing(false)
-    }
-  }, [])
-
-  const refreshPrompts = useCallback(async () => {
-    // A refresh should be a background operation, not a full page load.
-    if (user) {
-      await loadSavedPrompts(user, false, true)
-    }
-  }, [user, loadSavedPrompts])
-
-  // Optional: You can re-enable automatic refresh with focus/visibility if needed.
-
-  // Load data when user state is ready
-  useEffect(() => {
-    if (!authLoading) {
-      if (user) {
-        // User is authenticated, load their prompts
-        loadSavedPrompts(user, true)
-      } else {
-        // User is not authenticated, clear state
-        setLoading(false)
-        setPrompts([])
-        setTotalCount(0)
-      }
-    }
-  }, [user, authLoading, loadSavedPrompts]) // Depend on user and authLoading changes
-
-  const loadMorePrompts = async () => {
-    setLoadingMore(true)
-    
-    try {
-      const offset = prompts.length
-      const limit = 1000 // Load all remaining
-
-      // Get prompt sessions with their generated prompts
-      const { data, error } = await supabase
-        .from('prompt_sessions')
-        .select(`
-          id,
-          app_idea,
-          created_at,
-          generated_prompts (
-            prompt
-          )
-        `)
-        .eq('user_id', user?.id)
-        .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1)
-
-      if (error) throw error
-
-      const formattedPrompts = data
-        .filter(session => session.generated_prompts && session.generated_prompts.length > 0)
-        .map(session => ({
-          id: session.id,
-          app_idea: session.app_idea,
-          prompt: session.generated_prompts[0].prompt,
-          created_at: session.created_at
-        }))
-
-      setPrompts(prev => [...prev, ...formattedPrompts])
-      setHasMore(false) // After loading more, we've loaded everything
-    } catch (error) {
-      // Silently handle errors
-    } finally {
-      setLoadingMore(false)
+      setLoading(false)
     }
   }
+
+  // Simple effect that runs when user changes
+  useEffect(() => {
+    console.log('🔄 Effect triggered:', { user: !!user, authLoading })
+    
+    if (authLoading) {
+      console.log('⏳ Auth still loading, waiting...')
+      return
+    }
+
+    if (user) {
+      console.log('👤 User found, loading prompts...')
+      loadPrompts()
+    } else {
+      console.log('👤 No user, clearing state...')
+      setPrompts([])
+      setError(null)
+      setLoading(false)
+    }
+  }, [user, authLoading]) // Only depend on these two things
 
   const copyToClipboard = async (prompt: string) => {
     try {
       await navigator.clipboard.writeText(prompt)
-      // You could add a toast notification here
+      console.log('✅ Copied to clipboard')
     } catch (error) {
-      console.error('Failed to copy:', error)
+      console.error('❌ Failed to copy:', error)
     }
   }
 
-  // Show authentication required state
-  if (!authLoading && !user) {
+  // Show loading state while auth is loading
+  if (authLoading) {
+    return (
+      <div className="w-full min-h-screen flex flex-col items-center bg-white">
+        <main className="w-full max-w-3xl mx-auto flex flex-col items-center px-6 py-12 space-y-12">
+          <div className="w-full flex flex-col items-center text-center space-y-4">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            <p className="text-base text-gray-500">Checking authentication...</p>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  // Show sign-in required
+  if (!user) {
     return (
       <>
         <div className="w-full min-h-screen flex flex-col items-center bg-white">
@@ -228,6 +154,7 @@ export default function SavedPrompts() {
     )
   }
 
+  // Main content for signed-in users
   return (
     <div className="w-full min-h-screen flex flex-col items-center bg-white">
       <main className="w-full max-w-3xl mx-auto flex flex-col items-center px-6 py-12 space-y-12">
@@ -237,32 +164,63 @@ export default function SavedPrompts() {
             Your previously generated prompts are saved here for easy access.
           </p>
           <div className="flex items-center gap-4">
-            {totalCount > 0 && (
-              <p className="text-sm text-gray-400">
-                {prompts.length} of {totalCount} prompts shown
-              </p>
-            )}
-            {user && (
-              <Button
-                onClick={refreshPrompts}
-                disabled={refreshing || loading}
-                variant="outline"
-                size="sm"
-                className="rounded-md px-3 py-1 text-sm font-medium flex items-center gap-2"
-              >
-                <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
-                {refreshing ? 'Refreshing...' : 'Refresh'}
-              </Button>
-            )}
+            <Button
+              onClick={loadPrompts}
+              disabled={loading}
+              variant="outline"
+              size="sm"
+              className="rounded-md px-3 py-1 text-sm font-medium flex items-center gap-2"
+            >
+              <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              {loading ? 'Loading...' : 'Refresh'}
+            </Button>
           </div>
         </section>
 
-        {loading ? (
+        {/* Loading state */}
+        {loading && (
           <div className="w-full flex flex-col items-center text-center space-y-4">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
             <p className="text-base text-gray-500">Loading your saved prompts...</p>
           </div>
-        ) : prompts.length === 0 ? (
+        )}
+
+        {/* Error state */}
+        {error && !loading && (
+          <Card className="w-full rounded-xl border border-red-200 bg-red-50 shadow-none text-center">
+            <CardHeader className="pb-4">
+              <div className="flex justify-center mb-4">
+                <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-8 h-8 text-red-500" />
+                </div>
+              </div>
+              <CardTitle className="text-xl font-semibold text-red-900">Error Loading Prompts</CardTitle>
+              <CardDescription className="text-red-700">
+                {error}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                <Button 
+                  onClick={loadPrompts}
+                  className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
+                >
+                  Try Again
+                </Button>
+                <Button 
+                  asChild 
+                  variant="outline"
+                  className="rounded-md px-6 py-2 font-medium"
+                >
+                  <a href="/builder">Create New Prompt</a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Empty state */}
+        {!loading && !error && prompts.length === 0 && (
           <Card className="w-full rounded-xl border border-gray-200 bg-white shadow-none text-center">
             <CardHeader className="pb-2">
               <CardTitle className="text-base font-semibold text-gray-900">No Saved Prompts</CardTitle>
@@ -276,7 +234,10 @@ export default function SavedPrompts() {
               </Button>
             </CardContent>
           </Card>
-        ) : (
+        )}
+
+        {/* Prompts list */}
+        {!loading && !error && prompts.length > 0 && (
           <div className="w-full flex flex-col space-y-6">
             {prompts.map((savedPrompt) => (
               <Card key={savedPrompt.id} className="w-full rounded-xl border border-gray-200 bg-white shadow-none">
@@ -300,33 +261,9 @@ export default function SavedPrompts() {
                 </CardContent>
               </Card>
             ))}
-
-            {/* Load More Button */}
-            {hasMore && (
-              <div className="flex justify-center pt-4">
-                <Button
-                  onClick={loadMorePrompts}
-                  disabled={loadingMore}
-                  variant="outline"
-                  className="rounded-md px-6 py-2 font-medium flex items-center gap-2"
-                >
-                  {loadingMore ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    <>
-                      <ChevronDown className="h-4 w-4" />
-                      Load All Remaining ({totalCount - prompts.length} more)
-                    </>
-                  )}
-                </Button>
-              </div>
-            )}
           </div>
         )}
       </main>
     </div>
   )
-} 
+}

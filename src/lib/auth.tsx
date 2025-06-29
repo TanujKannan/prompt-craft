@@ -106,16 +106,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    try {
-      const { error } = await supabase.auth.signOut()
-      if (error) {
-        console.error('Sign out error:', error)
-        throw error
-      }
-    } catch (error) {
-      console.error('Failed to sign out:', error)
-      throw error
+    console.log('Starting sign-out…')
+
+    // Helper that always clears local React state
+    const clearState = () => {
+      setUser(null)
+      setSession(null)
+      setLoading(false)
     }
+
+    // Fire the network request but don't let the UI wait forever
+    const TIMEOUT_MS = 8000
+
+    const signOutRequest = supabase.auth.signOut()
+
+    // Start a timer that will fallback-resolve after TIMEOUT_MS so the UI doesn't hang
+    const timeoutFallback = new Promise<{ error: undefined }>((resolve) => {
+      setTimeout(() => {
+        console.warn('signOut still pending after', TIMEOUT_MS, 'ms – continuing UI flow')
+        resolve({ error: undefined })
+      }, TIMEOUT_MS)
+    })
+
+    // Race the real request with the fallback; whichever finishes first unblocks the UI
+    const { error } = await Promise.race([signOutRequest, timeoutFallback])
+
+    if (error) {
+      // Log but don't disrupt the UX – we clear state regardless
+      console.error('Supabase signOut returned an error:', error)
+    }
+
+    clearState()
+    console.log('Sign-out flow complete')
   }
 
   const value = {

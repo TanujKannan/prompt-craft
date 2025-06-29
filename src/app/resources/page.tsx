@@ -43,7 +43,7 @@ export default function Resources() {
                 </CardHeader>
                 <CardContent>
                   <p className="text-gray-600 mb-4">
-                    The best AI code editor. Perfect for beginners and pros alike. Ctrl+K to chat with AI about your code.
+                    Great code editor. Perfect for beginners and pros alike. Ctrl+K to chat with AI about your code.
                   </p>
                   <div className="space-y-2 mb-4">
                     <div className="text-sm text-gray-500">✓ Free tier available</div>

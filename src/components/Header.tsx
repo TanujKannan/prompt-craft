@@ -53,21 +53,24 @@ export default function Header() {
   const handleSignOut = async () => {
     if (signingOut) return // Prevent multiple clicks
     
+    console.log('User clicked sign out')
     setSigningOut(true)
+    
+    // Close dropdowns immediately for better UX
+    setShowMobileMenu(false)
+    setShowUserDropdown(false)
+    
     try {
-      await signOut()
-      // Close dropdowns immediately on successful sign out
-      setShowMobileMenu(false)
-      setShowUserDropdown(false)
-      // Redirect to home page to ensure consistent state
-      router.push('/')
+      await signOut() // This now never throws, just clears state
+      console.log('Sign out completed successfully')
     } catch (error) {
-      console.error('Error signing out:', error)
-      // Show error to user - you could add a toast notification here
-      alert('Failed to sign out. Please try again.')
-    } finally {
-      setSigningOut(false)
+      // This should never happen now, but just in case
+      console.error('Unexpected error during sign out:', error)
     }
+    
+    // Always redirect to home and reset sign out state
+    router.push('/')
+    setSigningOut(false)
   }
 
   const getUserDisplayName = () => {
