@@ -2,15 +2,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { HelpCircle, Sparkles, Copy, ChevronLeft, ChevronRight, Loader2, BookOpen, ArrowRight, Check } from 'lucide-react'
+import { HelpCircle, Sparkles, Copy, BookOpen, ArrowRight, Check } from 'lucide-react'
 import { debounce } from 'lodash'
-import { supabase, isSupabaseConfigured } from '@/lib/supabase'
 import { useAuth } from '@/lib/auth'
-import { promptTemplates, templateCategories, getTemplatesByCategory, getTemplateById, type PromptTemplate } from '@/lib/templates'
+import { promptTemplates, templateCategories, getTemplatesByCategory, type PromptTemplate } from '@/lib/templates'
 import { Lightbulb, Rocket, Database, Palette, UserCheck, Plus, X } from 'lucide-react'
 
 interface ClarifyingQuestion {
@@ -174,6 +171,7 @@ export default function PromptBuilder() {
   const [dynamicQuestions, setDynamicQuestions] = useState<ClarifyingQuestion[]>([])
   const [isGeneratingQuestions, setIsGeneratingQuestions] = useState(false)
   const [questionsGenerated, setQuestionsGenerated] = useState(false)
+  const [questionsGeneratedForIdea, setQuestionsGeneratedForIdea] = useState('')
   const [generatingStatus, setGeneratingStatus] = useState('')
   const [generatedQuestionsPreview, setGeneratedQuestionsPreview] = useState<ClarifyingQuestion[]>([])
   const [copied, setCopied] = useState(false)
@@ -200,6 +198,18 @@ export default function PromptBuilder() {
     setAppIdea(template.appIdea)
     setAnswers(template.prefilledAnswers)
     setCurrentStep(1)
+    
+    // Clear previous dynamic questions state when switching templates
+    setDynamicQuestions([])
+    setQuestionsGenerated(false)
+    setQuestionsGeneratedForIdea('')
+    setIsGeneratingQuestions(false)
+    setGeneratingStatus('')
+    setGeneratedQuestionsPreview([])
+    setShowCustomInput({})
+    setGeneratedPrompt('')
+    setCopied(false)
+    setPromptSaved(false)
   }
 
   // Start from scratch
@@ -208,6 +218,18 @@ export default function PromptBuilder() {
     setAppIdea('')
     setAnswers({})
     setCurrentStep(1)
+    
+    // Clear dynamic questions state when starting from scratch
+    setDynamicQuestions([])
+    setQuestionsGenerated(false)
+    setQuestionsGeneratedForIdea('')
+    setIsGeneratingQuestions(false)
+    setGeneratingStatus('')
+    setGeneratedQuestionsPreview([])
+    setShowCustomInput({})
+    setGeneratedPrompt('')
+    setCopied(false)
+    setPromptSaved(false)
   }
 
   // Reset all state for creating another app
@@ -221,6 +243,7 @@ export default function PromptBuilder() {
     setDynamicQuestions([])
     setIsGeneratingQuestions(false)
     setQuestionsGenerated(false)
+    setQuestionsGeneratedForIdea('')
     setGeneratingStatus('')
     setGeneratedQuestionsPreview([])
     setCopied(false)
@@ -308,6 +331,7 @@ export default function PromptBuilder() {
         
         setDynamicQuestions(data.questions)
         setQuestionsGenerated(true)
+        setQuestionsGeneratedForIdea(idea)
         setAnswers({}) // Reset answers when new questions are generated
         setShowCustomInput({})
       } else {
@@ -322,6 +346,7 @@ export default function PromptBuilder() {
       await new Promise(resolve => setTimeout(resolve, 1000))
       setDynamicQuestions(clarifyingQuestions)
       setQuestionsGenerated(true)
+      setQuestionsGeneratedForIdea(idea)
     } finally {
       clearInterval(statusInterval)
       setIsGeneratingQuestions(false)
@@ -348,8 +373,11 @@ export default function PromptBuilder() {
         return
       }
       
-      // Generate questions if not already generated or if app idea changed significantly
-      if (!questionsGenerated) {
+      // Check if we need to generate new questions
+      const needNewQuestions = !questionsGenerated || 
+        appIdea.trim() !== questionsGeneratedForIdea.trim()
+      
+      if (needNewQuestions) {
         await generateDynamicQuestions(appIdea)
       }
     }

@@ -92,7 +92,14 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json()
-    const { appIdea, answers } = body
+    const { appIdea, answers }: { 
+      appIdea: string; 
+      answers: Array<{
+        question: string;
+        selectedAnswer: string;
+        explanation: string;
+      }> 
+    } = body
 
     // Validate input
     if (!appIdea || !answers) {
@@ -117,7 +124,7 @@ export async function POST(request: Request) {
 
     // Format the clarifying answers with more detail
     const clarifying = answers
-      .map(a => {
+      .map((a: { question: string; selectedAnswer: string; explanation: string }) => {
         const isCustom = a.explanation === 'Custom input provided by user'
         return `Q: ${a.question}\nA: ${a.selectedAnswer}${isCustom ? ' (Custom input)' : ''}\nContext: ${a.explanation}`
       })

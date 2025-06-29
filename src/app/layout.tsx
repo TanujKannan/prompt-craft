@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 import { AuthProvider } from "@/lib/auth";
 import { Analytics } from '@vercel/analytics/react';
 
@@ -26,13 +27,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${geist.variable} ${geistMono.variable} antialiased`}
       >
         <AuthProvider>
           <Header />
           <main>{children}</main>
+          <Footer />
         </AuthProvider>
         <Analytics />
       </body>

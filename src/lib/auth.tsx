@@ -8,6 +8,7 @@ interface AuthContextType {
   user: User | null
   session: Session | null
   loading: boolean
+  hydrated: boolean
   signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
@@ -20,14 +21,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
+  const [hydrated, setHydrated] = useState(false)
+
+  // Check for existing session on mount to reduce flash
+  const [initialCheck] = useState(false)
 
   useEffect(() => {
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-      setLoading(false)
-    })
+    // Mark as hydrated on client side
+    setHydrated(true)
+    
+    // Quick initial check for session
+    const quickCheck = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        setSession(session)
+        setUser(session?.user ?? null)
+        // setInitialCheck(true)
+        setLoading(false)
+      } catch (error) {
+        console.error('Error getting initial session:', error)
+        setLoading(false)
+      }
+    }
+    
+    quickCheck()
 
     // Listen for auth changes
     const {
@@ -89,13 +106,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    await supabase.auth.signOut()
+    try {
+      const { error } = await supabase.auth.signOut()
+      if (error) {
+        console.error('Sign out error:', error)
+        throw error
+      }
+    } catch (error) {
+      console.error('Failed to sign out:', error)
+      throw error
+    }
   }
 
   const value = {
     user,
     session,
     loading,
+    hydrated,
     signIn,
     signUp,
     signOut,

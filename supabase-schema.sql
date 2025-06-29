@@ -60,19 +60,19 @@ drop policy if exists "Anyone can update generated_prompts" on generated_prompts
 -- Create new RLS policies for authenticated users
 
 -- Profiles policies
-create policy "Users can view their own profile" on profiles for select using (auth.uid() = id);
-create policy "Users can insert their own profile" on profiles for insert with check (auth.uid() = id);
-create policy "Users can update their own profile" on profiles for update using (auth.uid() = id);
+create policy "Users can view their own profile" on profiles for select using ((select auth.uid()) = id);
+create policy "Users can insert their own profile" on profiles for insert with check ((select auth.uid()) = id);
+create policy "Users can update their own profile" on profiles for update using ((select auth.uid()) = id);
 
 -- Prompt sessions policies
 create policy "Users can view their own sessions" on prompt_sessions for select using (
-  auth.uid() = user_id OR user_id IS NULL
+  (select auth.uid()) = user_id OR user_id IS NULL
 );
 create policy "Users can insert their own sessions" on prompt_sessions for insert with check (
-  auth.uid() = user_id OR (auth.uid() IS NULL AND user_id IS NULL)
+  (select auth.uid()) = user_id OR ((select auth.uid()) IS NULL AND user_id IS NULL)
 );
 create policy "Users can update their own sessions" on prompt_sessions for update using (
-  auth.uid() = user_id OR user_id IS NULL
+  (select auth.uid()) = user_id OR user_id IS NULL
 );
 
 -- Clarifying answers policies
@@ -80,21 +80,21 @@ create policy "Users can view their own answers" on clarifying_answers for selec
   EXISTS (
     SELECT 1 FROM prompt_sessions 
     WHERE prompt_sessions.id = clarifying_answers.session_id 
-    AND (prompt_sessions.user_id = auth.uid() OR prompt_sessions.user_id IS NULL)
+    AND (prompt_sessions.user_id = (select auth.uid()) OR prompt_sessions.user_id IS NULL)
   )
 );
 create policy "Users can insert their own answers" on clarifying_answers for insert with check (
   EXISTS (
     SELECT 1 FROM prompt_sessions 
     WHERE prompt_sessions.id = clarifying_answers.session_id 
-    AND (prompt_sessions.user_id = auth.uid() OR prompt_sessions.user_id IS NULL)
+    AND (prompt_sessions.user_id = (select auth.uid()) OR prompt_sessions.user_id IS NULL)
   )
 );
 create policy "Users can update their own answers" on clarifying_answers for update using (
   EXISTS (
     SELECT 1 FROM prompt_sessions 
     WHERE prompt_sessions.id = clarifying_answers.session_id 
-    AND (prompt_sessions.user_id = auth.uid() OR prompt_sessions.user_id IS NULL)
+    AND (prompt_sessions.user_id = (select auth.uid()) OR prompt_sessions.user_id IS NULL)
   )
 );
 
@@ -103,14 +103,14 @@ create policy "Users can view their own prompts" on generated_prompts for select
   EXISTS (
     SELECT 1 FROM prompt_sessions 
     WHERE prompt_sessions.id = generated_prompts.session_id 
-    AND (prompt_sessions.user_id = auth.uid() OR prompt_sessions.user_id IS NULL)
+    AND (prompt_sessions.user_id = (select auth.uid()) OR prompt_sessions.user_id IS NULL)
   )
 );
 create policy "Users can insert their own prompts" on generated_prompts for insert with check (
   EXISTS (
     SELECT 1 FROM prompt_sessions 
     WHERE prompt_sessions.id = generated_prompts.session_id 
-    AND (prompt_sessions.user_id = auth.uid() OR prompt_sessions.user_id IS NULL)
+    AND (prompt_sessions.user_id = (select auth.uid()) OR prompt_sessions.user_id IS NULL)
   )
 );
 

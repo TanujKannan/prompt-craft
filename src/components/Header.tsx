@@ -2,18 +2,26 @@
 
 import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Sparkles, User, LogOut, Settings, Menu, X } from 'lucide-react'
+import { Sparkles, User, LogOut, Settings, Menu, X, Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import AuthModal from './AuthModal'
 
 export default function Header() {
-  const { user, signOut, loading } = useAuth()
+  const { user, signOut } = useAuth()
+  const router = useRouter()
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [authMode, setAuthMode] = useState<'signin' | 'signup'>('signin')
   const [showMobileMenu, setShowMobileMenu] = useState(false)
   const [showUserDropdown, setShowUserDropdown] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
+  // Ensure UI renders after client-side hydration even if context flags misbehave
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -43,12 +51,22 @@ export default function Header() {
   }
 
   const handleSignOut = async () => {
+    if (signingOut) return // Prevent multiple clicks
+    
+    setSigningOut(true)
     try {
       await signOut()
+      // Close dropdowns immediately on successful sign out
       setShowMobileMenu(false)
       setShowUserDropdown(false)
+      // Redirect to home page to ensure consistent state
+      router.push('/')
     } catch (error) {
       console.error('Error signing out:', error)
+      // Show error to user - you could add a toast notification here
+      alert('Failed to sign out. Please try again.')
+    } finally {
+      setSigningOut(false)
     }
   }
 
@@ -94,6 +112,13 @@ export default function Header() {
               Templates
               <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all group-hover:w-full"></span>
             </Link>
+            <Link 
+              href="/resources" 
+              className="text-sm font-medium text-muted-foreground transition-colors hover:text-foreground relative group"
+            >
+              Resources
+              <span className="absolute -bottom-1 left-0 w-0 h-0.5 bg-primary transition-all group-hover:w-full"></span>
+            </Link>
             {user && (
               <Link 
                 href="/saved" 
@@ -107,8 +132,12 @@ export default function Header() {
 
           {/* Desktop Auth Controls */}
           <div className="hidden md:flex items-center space-x-3">
-            {loading ? (
-              <div className="w-8 h-8 rounded-full bg-gray-200 animate-pulse"></div>
+            {!mounted ? (
+              <div className="flex items-center space-x-3">
+                <div className="w-20 h-8 rounded-md bg-gray-200 animate-pulse"></div>
+                <div className="w-16 h-8 rounded-md bg-gray-200 animate-pulse"></div>
+                <div className="w-24 h-8 rounded-md bg-gray-200 animate-pulse"></div>
+              </div>
             ) : user ? (
               <div className="flex items-center space-x-3">
                 <Link href="/builder">
@@ -145,10 +174,15 @@ export default function Header() {
                         </Link>
                         <button
                           onClick={handleSignOut}
-                          className="flex items-center w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors"
+                          disabled={signingOut}
+                          className="flex items-center w-full px-3 py-2 text-sm text-foreground hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
-                          <LogOut className="h-4 w-4 mr-2" />
-                          Sign out
+                          {signingOut ? (
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                          ) : (
+                            <LogOut className="h-4 w-4 mr-2" />
+                          )}
+                          {signingOut ? 'Signing out...' : 'Sign out'}
                         </button>
                       </div>
                     </div>
@@ -218,6 +252,13 @@ export default function Header() {
               >
                 Templates
               </Link>
+              <Link 
+                href="/resources" 
+                className="block text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setShowMobileMenu(false)}
+              >
+                Resources
+              </Link>
               {user && (
                 <Link 
                   href="/saved" 
@@ -229,8 +270,12 @@ export default function Header() {
               )}
               
               <div className="pt-3 border-t space-y-3">
-                {loading ? (
-                  <div className="w-full h-8 rounded bg-gray-200 animate-pulse"></div>
+                {!mounted ? (
+                  <div className="space-y-3">
+                    <div className="w-32 h-4 rounded bg-gray-200 animate-pulse"></div>
+                    <div className="w-full h-8 rounded-md bg-gray-200 animate-pulse"></div>
+                    <div className="w-full h-8 rounded-md bg-gray-200 animate-pulse"></div>
+                  </div>
                 ) : user ? (
                   <div className="space-y-3">
                     <div className="text-sm text-muted-foreground">
@@ -245,10 +290,15 @@ export default function Header() {
                       variant="outline" 
                       size="sm" 
                       onClick={handleSignOut}
+                      disabled={signingOut}
                       className="w-full"
                     >
-                      <LogOut className="h-4 w-4 mr-2" />
-                      Sign out
+                      {signingOut ? (
+                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      ) : (
+                        <LogOut className="h-4 w-4 mr-2" />
+                      )}
+                      {signingOut ? 'Signing out...' : 'Sign out'}
                     </Button>
                   </div>
                 ) : (

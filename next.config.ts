@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
     // !! WARN !!
     ignoreBuildErrors: true,
   },
+  // Strip console.* (incl. console.error) in production bundles
+  compiler: {
+    // Only remove consoles when building for production
+    removeConsole: process.env.NODE_ENV === 'production',
+  },
 };
 
 export default nextConfig;

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
@@ -27,12 +27,17 @@ export default function SavedPrompts() {
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [hasMore, setHasMore] = useState(false)
   const [totalCount, setTotalCount] = useState(0)
+  const fetchIdRef = useRef(0)
 
-  const loadSavedPrompts = useCallback(async (isInitialLoad = false, isRefresh = false) => {
-    if (!user) return
+  const loadSavedPrompts = useCallback(async (currentUser: typeof user, isInitialLoad = false, isRefresh = false) => {
+    if (!currentUser) return
 
-    if (isInitialLoad && !isRefresh) {
+    const currentFetchId = ++fetchIdRef.current
+
+    if (isInitialLoad) {
       setLoading(true)
+      setPrompts([])
+      setTotalCount(0)
     } else if (isRefresh) {
       setRefreshing(true)
     }
@@ -41,7 +46,6 @@ export default function SavedPrompts() {
       const limit = INITIAL_LOAD_COUNT
       const offset = 0
 
-      // Get prompt sessions with their generated prompts
       const { data, error } = await supabase
         .from('prompt_sessions')
         .select(`
@@ -52,13 +56,13 @@ export default function SavedPrompts() {
             prompt
           )
         `)
-        .eq('user_id', user.id)
+        .eq('user_id', currentUser.id)
         .order('created_at', { ascending: false })
         .range(offset, offset + limit - 1)
 
       if (error) throw error
 
-      const formattedPrompts = data
+      const formattedPrompts = (data || [])
         .filter(session => session.generated_prompts && session.generated_prompts.length > 0)
         .map(session => ({
           id: session.id,
@@ -67,75 +71,53 @@ export default function SavedPrompts() {
           created_at: session.created_at
         }))
 
-      // Get total count
-      const { data: allSessions, error: countError } = await supabase
+      const { data: allSessions } = await supabase
         .from('prompt_sessions')
-        .select(`
-          id,
-          generated_prompts (
-            id
-          )
-        `)
-        .eq('user_id', user.id)
+        .select(`id, generated_prompts(id)`)  // lighter count query
+        .eq('user_id', currentUser.id)
 
-      const totalWithPrompts = countError ? formattedPrompts.length : 
-        (allSessions?.filter(session => 
-          session.generated_prompts && session.generated_prompts.length > 0
-        ).length || 0)
+      if (fetchIdRef.current !== currentFetchId) return // stale response
+
+      const totalWithPrompts = (allSessions || []).filter(s => s.generated_prompts && s.generated_prompts.length > 0).length
 
       setTotalCount(totalWithPrompts)
       setPrompts(formattedPrompts)
       setHasMore(formattedPrompts.length === INITIAL_LOAD_COUNT && totalWithPrompts > INITIAL_LOAD_COUNT)
     } catch (error) {
-      // Silently handle errors - user doesn't need to see technical details
+      if (fetchIdRef.current !== currentFetchId) return // ignore errors from stale
       setPrompts([])
       setTotalCount(0)
       setHasMore(false)
     } finally {
-      if (isInitialLoad && !isRefresh) {
+      if (fetchIdRef.current !== currentFetchId) return
+      if (isInitialLoad) setLoading(false)
+      if (isRefresh) setRefreshing(false)
+    }
+  }, [])
+
+  const refreshPrompts = useCallback(async () => {
+    // A refresh should be a background operation, not a full page load.
+    if (user) {
+      await loadSavedPrompts(user, false, true)
+    }
+  }, [user, loadSavedPrompts])
+
+  // Optional: You can re-enable automatic refresh with focus/visibility if needed.
+
+  // Load data when user state is ready
+  useEffect(() => {
+    if (!authLoading) {
+      if (user) {
+        // User is authenticated, load their prompts
+        loadSavedPrompts(user, true)
+      } else {
+        // User is not authenticated, clear state
         setLoading(false)
-      } else if (isRefresh) {
-        setRefreshing(false)
+        setPrompts([])
+        setTotalCount(0)
       }
     }
-  }, [user])
-
-  useEffect(() => {
-    if (!authLoading && user) {
-      loadSavedPrompts(true) // Initial load when user is confirmed and auth is done
-    } else if (!authLoading && !user) {
-      setLoading(false) // Stop loading if no user
-    }
-  }, [user, authLoading, loadSavedPrompts])
-
-  // Handle page focus/visibility for refreshing data - simplified to avoid re-render loops
-  useEffect(() => {
-    const handleFocus = () => {
-      if (user && !loading && !refreshing && !authLoading) {
-        // Call the function directly instead of using the memoized version
-        // to avoid dependency issues
-        refreshPrompts()
-      }
-    }
-
-    const handleVisibilityChange = () => {
-      if (!document.hidden && user && !loading && !refreshing && !authLoading) {
-        refreshPrompts()
-      }
-    }
-
-    window.addEventListener('focus', handleFocus)
-    document.addEventListener('visibilitychange', handleVisibilityChange)
-
-    return () => {
-      window.removeEventListener('focus', handleFocus)
-      document.removeEventListener('visibilitychange', handleVisibilityChange)
-    }
-  }, [user, loading, refreshing, authLoading]) // Removed loadSavedPrompts dependency
-
-  const refreshPrompts = async () => {
-    await loadSavedPrompts(true, true)
-  }
+  }, [user, authLoading, loadSavedPrompts]) // Depend on user and authLoading changes
 
   const loadMorePrompts = async () => {
     setLoadingMore(true)

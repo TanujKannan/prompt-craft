@@ -1,31 +1,8 @@
--- PromptCraft Database Setup - Run this after your basic table creation
--- This adds authentication features and security to your existing tables
+-- Migration: Fix RLS Performance Issue
+-- This script updates existing RLS policies to use (select auth.uid()) instead of auth.uid()
+-- to prevent per-row evaluation and improve query performance at scale.
 
--- First, let's add the missing columns to existing tables
-ALTER TABLE profiles ADD COLUMN IF NOT EXISTS updated_at timestamp default now();
-ALTER TABLE prompt_sessions ADD COLUMN IF NOT EXISTS updated_at timestamp default now();
-
--- Update foreign key constraint to cascade deletes properly
-ALTER TABLE prompt_sessions DROP CONSTRAINT IF EXISTS prompt_sessions_user_id_fkey;
-ALTER TABLE prompt_sessions ADD CONSTRAINT prompt_sessions_user_id_fkey 
-  FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE;
-
--- Update other foreign key constraints
-ALTER TABLE clarifying_answers DROP CONSTRAINT IF EXISTS clarifying_answers_session_id_fkey;
-ALTER TABLE clarifying_answers ADD CONSTRAINT clarifying_answers_session_id_fkey 
-  FOREIGN KEY (session_id) REFERENCES prompt_sessions(id) ON DELETE CASCADE;
-
-ALTER TABLE generated_prompts DROP CONSTRAINT IF EXISTS generated_prompts_session_id_fkey;
-ALTER TABLE generated_prompts ADD CONSTRAINT generated_prompts_session_id_fkey 
-  FOREIGN KEY (session_id) REFERENCES prompt_sessions(id) ON DELETE CASCADE;
-
--- Enable Row Level Security (RLS) on all tables
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE prompt_sessions ENABLE ROW LEVEL SECURITY;
-ALTER TABLE clarifying_answers ENABLE ROW LEVEL SECURITY;
-ALTER TABLE generated_prompts ENABLE ROW LEVEL SECURITY;
-
--- Drop any existing policies to avoid conflicts
+-- Drop existing policies
 DROP POLICY IF EXISTS "Users can view their own profile" ON profiles;
 DROP POLICY IF EXISTS "Users can insert their own profile" ON profiles;
 DROP POLICY IF EXISTS "Users can update their own profile" ON profiles;
@@ -38,7 +15,7 @@ DROP POLICY IF EXISTS "Users can update their own answers" ON clarifying_answers
 DROP POLICY IF EXISTS "Users can view their own prompts" ON generated_prompts;
 DROP POLICY IF EXISTS "Users can insert their own prompts" ON generated_prompts;
 
--- Create RLS policies for authenticated users
+-- Create optimized RLS policies using (select auth.uid()) for better performance
 
 -- Profiles policies
 CREATE POLICY "Users can view their own profile" ON profiles 
@@ -107,51 +84,5 @@ CREATE POLICY "Users can insert their own prompts" ON generated_prompts
     )
   );
 
--- Create function to handle profile creation on user signup
-CREATE OR REPLACE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-  INSERT INTO public.profiles (id, email, full_name)
-  VALUES (
-    NEW.id,
-    NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', split_part(NEW.email, '@', 1))
-  );
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
--- Create trigger to automatically create profile on user signup
-DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
-CREATE TRIGGER on_auth_user_created
-  AFTER INSERT ON auth.users
-  FOR EACH ROW EXECUTE PROCEDURE handle_new_user();
-
--- Create function to update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = CURRENT_TIMESTAMP;
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Create triggers for updated_at columns
-DROP TRIGGER IF EXISTS update_profiles_updated_at ON profiles;
-CREATE TRIGGER update_profiles_updated_at
-  BEFORE UPDATE ON profiles
-  FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
-DROP TRIGGER IF EXISTS update_prompt_sessions_updated_at ON prompt_sessions;
-CREATE TRIGGER update_prompt_sessions_updated_at
-  BEFORE UPDATE ON prompt_sessions
-  FOR EACH ROW EXECUTE PROCEDURE update_updated_at_column();
-
--- Grant necessary permissions for the service role
-GRANT USAGE ON SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated;
-GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO anon, authenticated;
-
--- Test that everything works by checking if we can select from tables
--- (This will help verify the policies are working correctly)
-SELECT 'Database setup completed successfully!' AS status; 
+-- Confirm migration completed
+SELECT 'RLS performance optimization completed successfully!' AS status; 
