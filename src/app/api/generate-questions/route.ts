@@ -1,12 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+const openai = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+})
 
 interface QuestionOption {
   value: string
   label: string
   explanation: string
+  recommended: boolean
 }
 
 interface RawQuestion {
@@ -22,10 +26,10 @@ export async function POST(req: NextRequest) {
   try {
     const { appIdea } = await req.json()
 
-    // Check if OpenAI API key is configured
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OpenAI API key is not configured')
-      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
+    // Check if Groq API key is configured
+    if (!process.env.GROQ_API_KEY) {
+      console.error('Groq API key is not configured')
+      return NextResponse.json({ error: 'Groq API key not configured' }, { status: 500 })
     }
 
     // Validate input
@@ -45,6 +49,7 @@ Rules for generating questions:
 3. Include questions about user experience, data requirements, and key features
 4. Make questions beginner-friendly with clear multiple choice options
 5. Each question should help determine the best tech stack and implementation approach
+6. For each multiple-choice set, clearly flag **one option** as the simplest path to get an MVP running quickly by adding "recommended": true to that option object
 
 For each question, provide:
 - A clear, specific question
@@ -62,7 +67,8 @@ Return a JSON array of questions in this exact format:
         {
           "value": "option_key",
           "label": "Option Label", 
-          "explanation": "Brief explanation of when to choose this option"
+          "explanation": "Brief explanation of when to choose this option",
+          "recommended": false
         }
       ],
       "placeholder": "Placeholder text for custom input...",
@@ -76,7 +82,7 @@ Return a JSON array of questions in this exact format:
 Generate 4-6 smart clarifying questions that will help determine the best technical approach for building this specific app. Make the questions relevant to the app idea above.`
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'llama-3.1-8b-instant',
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt }
@@ -88,34 +94,40 @@ Generate 4-6 smart clarifying questions that will help determine the best techni
 
     const content = response.choices[0].message.content
 
+    // DEBUG: log raw Gemini output for troubleshooting JSON issues
+    console.log('Gemini raw response (first 500 chars):', content?.slice(0, 500))
+
     if (!content) {
       return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 })
     }
 
-    try {
-      const parsed = JSON.parse(content)
-      
-      // Validate the response structure
-      if (!parsed.questions || !Array.isArray(parsed.questions)) {
-        throw new Error('Invalid response format')
-      }
+    // --- Simplified JSON parsing ---
+    const jsonText = (
+      content
+        .replace(/```json|```/g, '')      // strip code fences
+        .replace(/,\s*([\]}])/g, '$1')  // delete trailing commas
+        .trim()
+    )
 
-      // Ensure each question has required fields
-      const validatedQuestions = parsed.questions.map((q: RawQuestion, index: number) => ({
-        id: q.id || `question_${index}`,
-        question: q.question || 'What would you like to know?',
-        type: q.type || 'both',
-        options: Array.isArray(q.options) ? q.options : [],
-        placeholder: q.placeholder || 'Enter your custom answer...',
-        allowCustom: q.allowCustom !== false
-      }))
-
-      return NextResponse.json({ questions: validatedQuestions })
-    } catch (parseError) {
-      console.error('Failed to parse AI response:', parseError)
-      return NextResponse.json({ error: 'Failed to parse generated questions' }, { status: 500 })
+    const match = jsonText.match(/\{[\s\S]*\}/)
+    const parsed: any = JSON.parse(match ? match[0] : jsonText)
+    
+    // Validate the response structure
+    if (!parsed.questions || !Array.isArray(parsed.questions)) {
+      throw new Error('Invalid response format')
     }
 
+    // Ensure each question has required fields
+    const validatedQuestions = parsed.questions.map((q: RawQuestion, index: number) => ({
+      id: q.id || `question_${index}`,
+      question: q.question || 'What would you like to know?',
+      type: q.type || 'both',
+      options: Array.isArray(q.options) ? q.options : [],
+      placeholder: q.placeholder || 'Enter your custom answer...',
+      allowCustom: q.allowCustom !== false
+    }))
+
+    return NextResponse.json({ questions: validatedQuestions })
   } catch (error) {
     console.error('Error generating questions:', error)
     return NextResponse.json(

@@ -18,6 +18,7 @@ interface ClarifyingQuestion {
     value: string
     label: string
     explanation: string
+    recommended?: boolean
   }[]
   placeholder?: string
   allowCustom?: boolean
@@ -805,7 +806,12 @@ export default function PromptBuilder() {
                                 className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 animate-in fade-in duration-300"
                                 style={{ animationDelay: `${(index * 100) + (optIndex * 50)}ms` }}
                               >
-                                <div className="font-medium text-sm text-gray-700">{option.label}</div>
+                                <div className="font-medium text-sm text-gray-700 flex items-center gap-2">
+                                  {option.label}
+                                  {option.recommended && (
+                                    <span className="text-xs font-semibold text-white bg-green-600 px-2 py-0.5 rounded">Recommended</span>
+                                  )}
+                                </div>
                                 <div className="text-xs text-gray-500 mt-1 truncate">
                                   {option.explanation.substring(0, 60)}...
                                 </div>
@@ -906,7 +912,12 @@ export default function PromptBuilder() {
                                   }`}
                                 >
                                   <div className="flex-1">
-                                    <div className="font-medium text-base text-gray-900">{option.label}</div>
+                                    <div className="font-medium text-base text-gray-900 flex items-center gap-2">
+                                      {option.label}
+                                      {option.recommended && (
+                                        <span className="text-xs font-semibold text-white bg-green-600 px-2 py-0.5 rounded">Recommended</span>
+                                      )}
+                                    </div>
                                     <div className="text-sm text-gray-500 mt-1">
                                       {option.explanation}
                                     </div>

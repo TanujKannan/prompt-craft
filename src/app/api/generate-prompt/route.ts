@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import OpenAI from 'openai'
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
+// Use Groq API (OpenAI-compatible)
+const openai = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1',
+})
 
 // Use service role key for backend operations (bypasses RLS)
 const supabase = createClient(
@@ -107,9 +111,9 @@ export async function POST(request: Request) {
     }
 
     // Check if OpenAI API key is configured
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OpenAI API key is not configured')
-      return NextResponse.json({ error: 'OpenAI API key not configured' }, { status: 500 })
+    if (!process.env.GROQ_API_KEY) {
+      console.error('Groq API key is not configured')
+      return NextResponse.json({ error: 'Groq API key not configured' }, { status: 500 })
     }
     
     // Validate input length to prevent abuse
@@ -154,7 +158,7 @@ Make the prompt detailed enough that an AI coding tool can understand exactly wh
     // Generate the prompt using OpenAI
     try {
       const response = await openai.chat.completions.create({
-        model: 'gpt-4o',
+        model: 'llama-3.1-8b-instant',
         messages: [
           {
             role: 'system',
