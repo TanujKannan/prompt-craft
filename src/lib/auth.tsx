@@ -115,29 +115,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false)
     }
 
-    // Fire the network request but don't let the UI wait forever
+    // 1) Immediately clear the session locally so a page refresh does NOT restore it.
+    //    This is much faster than waiting for the network request to Supabase.
+    try {
+      await supabase.auth.signOut({ scope: 'local' })
+    } catch (err) {
+      // Even if this fails, we'll still proceed. The goal is to clear local storage ASAP.
+      console.warn('Local signOut threw', err)
+    }
+
+    // 2) Fire off the global network sign-out in the background – this revokes the refresh token
+    //    on the Supabase backend, but we don't block the UI on it.
     const TIMEOUT_MS = 8000
 
-    const signOutRequest = supabase.auth.signOut()
+    const globalSignOutPromise = supabase.auth.signOut({ scope: 'global' })
 
     // Start a timer that will fallback-resolve after TIMEOUT_MS so the UI doesn't hang
     const timeoutFallback = new Promise<{ error: undefined }>((resolve) => {
       setTimeout(() => {
-        console.warn('signOut still pending after', TIMEOUT_MS, 'ms – continuing UI flow')
+        console.warn('Global signOut still pending after', TIMEOUT_MS, 'ms – continuing UI flow')
         resolve({ error: undefined })
       }, TIMEOUT_MS)
     })
 
-    // Race the real request with the fallback; whichever finishes first unblocks the UI
-    const { error } = await Promise.race([signOutRequest, timeoutFallback])
+    // Race the network request with the fallback; whichever finishes first unblocks the UI
+    const { error } = await Promise.race([globalSignOutPromise, timeoutFallback])
 
     if (error) {
-      // Log but don't disrupt the UX – we clear state regardless
-      console.error('Supabase signOut returned an error:', error)
+      // Log but don't disrupt the UX – we cleared session locally already.
+      console.error('Supabase global signOut returned an error:', error)
     }
 
     clearState()
-    console.log('Sign-out flow complete')
+    console.log('Sign-out flow complete (local cleared, global attempted)')
   }
 
   const value = {
