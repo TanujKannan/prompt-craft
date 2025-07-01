@@ -2,13 +2,15 @@
 
 import React, { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { HelpCircle, Sparkles, Copy, BookOpen, ArrowRight, Check } from 'lucide-react'
+import { HelpCircle, Sparkles, Copy, BookOpen, ArrowRight, Check, ChevronDown, ChevronRight, Edit } from 'lucide-react'
 import { debounce } from 'lodash'
 import { useAuth } from '@/lib/auth'
 import { promptTemplates, templateCategories, getTemplatesByCategory, type PromptTemplate } from '@/lib/templates'
 import { Lightbulb, Rocket, Database, Palette, UserCheck, Plus, X } from 'lucide-react'
+import AuthModal from '@/components/AuthModal'
 
 interface ClarifyingQuestion {
   id: string
@@ -178,6 +180,10 @@ export default function PromptBuilder() {
   const [copied, setCopied] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [promptSaved, setPromptSaved] = useState(false)
+  const [showAuthModal, setShowAuthModal] = useState(false)
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
+  const [isEditingIdea, setIsEditingIdea] = useState(false)
+  const [editedIdea, setEditedIdea] = useState('')
 
   // Check for template in localStorage on mount
   useEffect(() => {
@@ -557,6 +563,94 @@ export default function PromptBuilder() {
     return <HelpCircle className="h-5 w-5 text-gray-400" />
   }
 
+  // Function to group questions by category
+  const groupQuestionsByCategory = (questions: ClarifyingQuestion[]) => {
+    const groups: Record<string, ClarifyingQuestion[]> = {}
+    
+    questions.forEach(question => {
+      // Determine category based on question content/type
+      let category = 'General'
+      const qLower = question.question.toLowerCase()
+      
+      if (qLower.includes('feature') || qLower.includes('functionality') || qLower.includes('what should')) {
+        category = 'Core Features'
+      } else if (qLower.includes('user') || qLower.includes('authentication') || qLower.includes('login') || qLower.includes('account')) {
+        category = 'User Management'
+      } else if (qLower.includes('database') || qLower.includes('data') || qLower.includes('storage')) {
+        category = 'Data & Storage'
+      } else if (qLower.includes('design') || qLower.includes('ui') || qLower.includes('theme') || qLower.includes('style')) {
+        category = 'Design & UI'
+      } else if (qLower.includes('deploy') || qLower.includes('host') || qLower.includes('platform')) {
+        category = 'Deployment'
+      } else if (qLower.includes('tech') || qLower.includes('framework') || qLower.includes('library')) {
+        category = 'Technology Stack'
+      }
+      
+      if (!groups[category]) {
+        groups[category] = []
+      }
+      groups[category].push(question)
+    })
+    
+    return groups
+  }
+
+  // Toggle section expansion
+  const toggleSection = (sectionName: string) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [sectionName]: !prev[sectionName]
+    }))
+  }
+
+  // Initialize expanded sections when questions are generated
+  useEffect(() => {
+    if (dynamicQuestions.length > 0) {
+      const questionGroups = groupQuestionsByCategory(dynamicQuestions)
+      const initialExpanded: Record<string, boolean> = {}
+      
+      // Expand first section by default, collapse others
+      Object.keys(questionGroups).forEach((category, index) => {
+        initialExpanded[category] = index === 0
+      })
+      
+      setExpandedSections(initialExpanded)
+    }
+  }, [dynamicQuestions])
+
+  // Handle editing app idea
+  const startEditingIdea = () => {
+    setEditedIdea(appIdea)
+    setIsEditingIdea(true)
+  }
+
+  const cancelEditingIdea = () => {
+    setEditedIdea('')
+    setIsEditingIdea(false)
+  }
+
+  const saveEditedIdea = async () => {
+    if (!editedIdea.trim()) return
+    
+    // Update the app idea
+    setAppIdea(editedIdea.trim())
+    setIsEditingIdea(false)
+    
+    // Reset generated content to trigger regeneration
+    setDynamicQuestions([])
+    setAnswers({})
+    setShowCustomInput({})
+    setGeneratedPrompt('')
+    setQuestionsGeneratedForIdea('')
+    setExpandedSections({})
+    
+    // Go back to step 2 to show new questions
+    setCurrentStep(2)
+    
+    // Generate new questions for the edited idea
+    await generateDynamicQuestions(editedIdea.trim())
+  }
+
   return (
     <div className="w-full min-h-screen flex flex-col items-center bg-white">
       <main className="w-full max-w-3xl mx-auto flex flex-col items-center px-6 py-12 space-y-12">
@@ -886,111 +980,151 @@ export default function PromptBuilder() {
                 )}
               </div>
             ) : (
-              <div className="w-full grid grid-cols-1 md:grid-cols-2 gap-4">
-                {dynamicQuestions.map((question) => {
-                  const currentAnswer = answers[question.id]
-                  const isCustomInputVisible = showCustomInput[question.id]
+              <div className="w-full space-y-4">
+                {Object.entries(groupQuestionsByCategory(dynamicQuestions)).map(([category, questions]) => {
+                  const isExpanded = expandedSections[category]
+                  const answeredCount = questions.filter(q => answers[q.id]?.selected || answers[q.id]?.custom).length
+                  
                   return (
-                    <Card key={question.id} className="rounded-xl border border-gray-200 bg-white shadow-none">
-                      <CardHeader className="flex flex-col items-start space-y-2 pb-2">
-                        <div className="flex items-center gap-2">
-                          {getQuestionIcon(question.id)}
-                          <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
+                    <div key={category} className="border border-gray-200 rounded-xl bg-white shadow-none">
+                      {/* Section Header */}
+                      <button
+                        onClick={() => toggleSection(category)}
+                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 rounded-t-xl transition-colors"
+                      >
+                        <div className="flex items-center gap-3">
+                          {isExpanded ? (
+                            <ChevronDown className="h-5 w-5 text-gray-500" />
+                          ) : (
+                            <ChevronRight className="h-5 w-5 text-gray-500" />
+                          )}
+                          <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
+                          <span className="text-sm text-gray-500">
+                            ({answeredCount}/{questions.length} answered)
+                          </span>
                         </div>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        {/* Predefined Options */}
-                        {question.options && question.options.length > 0 && (
-                          <div className="space-y-3">
-                            {question.options.map((option) => {
-                              const isSelected = currentAnswer?.selected === option.value
+                        {answeredCount === questions.length && (
+                          <div className="flex items-center gap-1 text-green-600">
+                            <Check className="h-4 w-4" />
+                            <span className="text-sm font-medium">Complete</span>
+                          </div>
+                        )}
+                      </button>
+                      
+                      {/* Section Content */}
+                      {isExpanded && (
+                        <div className="px-6 pb-6">
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {questions.map((question) => {
+                              const currentAnswer = answers[question.id]
+                              const isCustomInputVisible = showCustomInput[question.id]
                               return (
-                                <div
-                                  key={option.value}
-                                  className={`rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between gap-3 transition-all ${
-                                    isSelected ? 'ring-2 ring-black border-black' : 'hover:border-gray-300'
-                                  }`}
-                                >
-                                  <div className="flex-1">
-                                    <div className="font-medium text-base text-gray-900 flex items-center gap-2">
-                                      {option.label}
-                                      {option.recommended && (
-                                        <span className="text-xs font-semibold text-white bg-green-600 px-2 py-0.5 rounded">Recommended</span>
-                                      )}
+                                <Card key={question.id} className="rounded-xl border border-gray-100 bg-gray-50 shadow-none">
+                                  <CardHeader className="flex flex-col items-start space-y-2 pb-2">
+                                    <div className="flex items-center gap-2">
+                                      {getQuestionIcon(question.id)}
+                                      <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
                                     </div>
-                                    <div className="text-sm text-gray-500 mt-1">
-                                      {option.explanation}
-                                    </div>
-                                  </div>
-                                  <Button
-                                    onClick={() => handleAnswerSelect(question.id, option.value)}
-                                    size="sm"
-                                    variant={isSelected ? "default" : "outline"}
-                                    className={`rounded-md min-w-[80px] ${
-                                      isSelected 
-                                        ? 'bg-black text-white hover:bg-gray-900' 
-                                        : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                                    }`}
-                                  >
-                                    {isSelected ? (
-                                      <>
-                                        <Check className="h-3 w-3 mr-1" />
-                                        Selected
-                                      </>
-                                    ) : (
-                                      'Select'
+                                  </CardHeader>
+                                  <CardContent className="space-y-4">
+                                    {/* Predefined Options */}
+                                    {question.options && question.options.length > 0 && (
+                                      <div className="space-y-3">
+                                        {question.options.map((option) => {
+                                          const isSelected = currentAnswer?.selected === option.value
+                                          return (
+                                            <div
+                                              key={option.value}
+                                              className={`rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between gap-3 transition-all ${
+                                                isSelected ? 'ring-2 ring-black border-black' : 'hover:border-gray-300'
+                                              }`}
+                                            >
+                                              <div className="flex-1">
+                                                <div className="font-medium text-base text-gray-900 flex items-center gap-2">
+                                                  {option.label}
+                                                  {option.recommended && (
+                                                    <span className="text-xs font-semibold text-white bg-green-600 px-2 py-0.5 rounded">Recommended</span>
+                                                  )}
+                                                </div>
+                                                <div className="text-sm text-gray-500 mt-1">
+                                                  {option.explanation}
+                                                </div>
+                                              </div>
+                                              <Button
+                                                onClick={() => handleAnswerSelect(question.id, option.value)}
+                                                size="sm"
+                                                variant={isSelected ? "default" : "outline"}
+                                                className={`rounded-md min-w-[80px] ${
+                                                  isSelected 
+                                                    ? 'bg-black text-white hover:bg-gray-900' 
+                                                    : 'border-gray-200 text-gray-700 hover:bg-gray-50'
+                                                }`}
+                                              >
+                                                {isSelected ? (
+                                                  <>
+                                                    <Check className="h-3 w-3 mr-1" />
+                                                    Selected
+                                                  </>
+                                                ) : (
+                                                  'Select'
+                                                )}
+                                              </Button>
+                                            </div>
+                                          )
+                                        })}
+                                      </div>
                                     )}
-                                  </Button>
-                                </div>
+
+                                    {/* Custom Input Toggle */}
+                                    {question.allowCustom && (
+                                      <div className="space-y-3">
+                                        <Button
+                                          onClick={() => toggleCustomInput(question.id)}
+                                          variant="outline"
+                                          size="sm"
+                                          className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
+                                        >
+                                          {isCustomInputVisible ? (
+                                            <>
+                                              <X className="h-4 w-4 mr-2" />
+                                              Hide Custom Input
+                                            </>
+                                          ) : (
+                                            <>
+                                              <Plus className="h-4 w-4 mr-2" />
+                                              Add Custom Answer
+                                            </>
+                                          )}
+                                        </Button>
+
+                                        {isCustomInputVisible && (
+                                          <Textarea
+                                            placeholder={question.placeholder || "Enter your custom answer..."}
+                                            value={currentAnswer?.custom || ''}
+                                            onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                                            className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
+                                          />
+                                        )}
+                                      </div>
+                                    )}
+
+                                    {/* Input-only Questions */}
+                                    {question.type === 'input' && (
+                                      <Textarea
+                                        placeholder={question.placeholder || "Enter your answer..."}
+                                        value={currentAnswer?.custom || ''}
+                                        onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                                        className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
+                                      />
+                                    )}
+                                  </CardContent>
+                                </Card>
                               )
                             })}
                           </div>
-                        )}
-
-                        {/* Custom Input Toggle */}
-                        {question.allowCustom && (
-                          <div className="space-y-3">
-                            <Button
-                              onClick={() => toggleCustomInput(question.id)}
-                              variant="outline"
-                              size="sm"
-                              className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
-                            >
-                              {isCustomInputVisible ? (
-                                <>
-                                  <X className="h-4 w-4 mr-2" />
-                                  Hide Custom Input
-                                </>
-                              ) : (
-                                <>
-                                  <Plus className="h-4 w-4 mr-2" />
-                                  Add Custom Answer
-                                </>
-                              )}
-                            </Button>
-
-                            {isCustomInputVisible && (
-                              <Textarea
-                                placeholder={question.placeholder || "Enter your custom answer..."}
-                                value={currentAnswer?.custom || ''}
-                                onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                                className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                              />
-                            )}
-                          </div>
-                        )}
-
-                        {/* Input-only Questions */}
-                        {question.type === 'input' && (
-                          <Textarea
-                            placeholder={question.placeholder || "Enter your answer..."}
-                            value={currentAnswer?.custom || ''}
-                            onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                            className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                          />
-                        )}
-                      </CardContent>
-                    </Card>
+                        </div>
+                      )}
+                    </div>
                   )
                 })}
               </div>
@@ -1004,26 +1138,37 @@ export default function PromptBuilder() {
               >
                 Back
               </Button>
-              <Button
-                onClick={generatePrompt}
-                disabled={!canProceedToStep3 || isGenerating || isGeneratingQuestions}
-                size="lg"
-                className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
-              >
-                {isGenerating ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Generating Prompt...
-                  </>
-                ) : isGeneratingQuestions ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Loading Questions...
-                  </>
-                ) : (
-                  'Generate Prompt'
-                )}
-              </Button>
+              {user ? (
+                <Button
+                  onClick={generatePrompt}
+                  disabled={!canProceedToStep3 || isGenerating || isGeneratingQuestions}
+                  size="lg"
+                  className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
+                >
+                  {isGenerating ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Generating Prompt...
+                    </>
+                  ) : isGeneratingQuestions ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Loading Questions...
+                    </>
+                  ) : (
+                    'Generate Prompt'
+                  )}
+                </Button>
+              ) : (
+                <Button
+                  onClick={() => setShowAuthModal(true)}
+                  disabled={!canProceedToStep3 || isGeneratingQuestions}
+                  size="lg"
+                  className="bg-blue-600 text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-blue-700 transition"
+                >
+                  Sign In to Generate Prompt
+                </Button>
+              )}
             </div>
           </div>
         )}
@@ -1039,6 +1184,26 @@ export default function PromptBuilder() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
+              {/* Edit App Idea Section */}
+              <div className="p-4 bg-orange-50 rounded-lg border border-orange-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold text-orange-800 mb-1">Want to refine your app idea?</h3>
+                    <p className="text-sm text-orange-700">
+                      Edit your original idea to add more details or change direction, then get updated instructions.
+                    </p>
+                  </div>
+                  <Button
+                    onClick={startEditingIdea}
+                    variant="outline"
+                    className="ml-4 border-orange-300 text-orange-700 hover:bg-orange-100 rounded-md px-4 py-2 text-sm font-medium shadow hover:shadow-md transition"
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit App Idea
+                  </Button>
+                </div>
+              </div>
+
               {/* Instructions for beginners */}
               <div className="p-4 bg-green-50 rounded-lg border border-green-200">
                 <h3 className="font-semibold text-green-800 mb-2">What to do next:</h3>
@@ -1176,6 +1341,55 @@ export default function PromptBuilder() {
           </Card>
         )}
       </main>
+      <AuthModal 
+        isOpen={showAuthModal} 
+        onClose={() => setShowAuthModal(false)} 
+      />
+
+      {/* Edit App Idea Modal */}
+      {isEditingIdea && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl p-6 w-full max-w-2xl">
+            <h2 className="text-xl font-bold text-gray-900 mb-4">Edit Your App Idea</h2>
+            <p className="text-sm text-gray-600 mb-4">
+              Refine your app concept below. The AI will generate new customized questions based on your updated idea.
+            </p>
+            
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="editedIdea" className="text-sm font-medium text-gray-700">
+                  Your App Idea
+                </Label>
+                <Textarea
+                  id="editedIdea"
+                  value={editedIdea}
+                  onChange={(e) => setEditedIdea(e.target.value)}
+                  placeholder="Describe your app idea in detail..."
+                  className="mt-1 min-h-[120px] w-full border border-gray-300 rounded-md focus:border-black focus:ring-0 transition"
+                />
+              </div>
+              
+              <div className="flex gap-3 justify-end">
+                <Button
+                  onClick={cancelEditingIdea}
+                  variant="outline"
+                  className="px-4 py-2 rounded-md"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={saveEditedIdea}
+                  disabled={!editedIdea.trim() || editedIdea.trim() === appIdea}
+                  className="bg-orange-600 text-white hover:bg-orange-700 px-4 py-2 rounded-md font-medium shadow hover:shadow-md transition"
+                >
+                  <Edit className="h-4 w-4 mr-2" />
+                  Update & Generate New Questions
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 } 
