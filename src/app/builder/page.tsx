@@ -11,6 +11,7 @@ import { useAuth } from '@/lib/auth'
 import { promptTemplates, templateCategories, getTemplatesByCategory, type PromptTemplate } from '@/lib/templates'
 import { Lightbulb, Rocket, Database, Palette, UserCheck, Plus, X } from 'lucide-react'
 import AuthModal from '@/components/AuthModal'
+import { useToast } from '@/components/ToastProvider'
 
 interface ClarifyingQuestion {
   id: string
@@ -184,6 +185,7 @@ export default function PromptBuilder() {
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [isEditingIdea, setIsEditingIdea] = useState(false)
   const [editedIdea, setEditedIdea] = useState('')
+  const { addToast } = useToast()
 
   // Check for template in localStorage on mount
   useEffect(() => {
@@ -499,10 +501,12 @@ export default function PromptBuilder() {
     try {
       await navigator.clipboard.writeText(generatedPrompt)
       setCopied(true)
+      addToast('Instructions copied to clipboard', 'success')
       // Reset the copied state after 2 seconds
       setTimeout(() => setCopied(false), 2000)
     } catch (error) {
       console.error('Failed to copy:', error)
+      addToast('Failed to copy to clipboard', 'error')
     }
   }
 
@@ -651,10 +655,61 @@ export default function PromptBuilder() {
     await generateDynamicQuestions(editedIdea.trim())
   }
 
+  // Keyboard shortcuts for navigation (Ctrl/Cmd + →, Ctrl/Cmd + ←)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const isModifier = e.metaKey || e.ctrlKey
+      if (!isModifier) return
+      if (e.key === 'ArrowRight') {
+        e.preventDefault()
+        goNext()
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault()
+        goPrev()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [currentStep, selectedTemplate, appIdea, canProceedToStep3, isGenerating, isGeneratingQuestions, user])
+
+  // Helper functions for navigation
+  const goNext = () => {
+    if (currentStep === 0) {
+      // Need template selection or scratch chosen
+      if (selectedTemplate || appIdea.trim().length > 0) {
+        setCurrentStep(1)
+      }
+    } else if (currentStep === 1) {
+      // Same logic as clicking Next button
+      handleNext()
+    } else if (currentStep === 2) {
+      if (!canProceedToStep3 || isGenerating || isGeneratingQuestions) return
+      if (user) {
+        generatePrompt()
+      } else {
+        setShowAuthModal(true)
+      }
+    }
+  }
+
+  const goPrev = () => {
+    if (currentStep > 0) {
+      setCurrentStep(currentStep - 1)
+    }
+  }
+
   return (
     <div className="w-full min-h-screen flex flex-col items-center bg-white">
       <main className="w-full max-w-3xl mx-auto flex flex-col items-center px-6 py-12 space-y-12">
-        {/* Progress Steps */}
+        {/* Linear Progress Bar */}
+        <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+          <div
+            className="bg-black h-full transition-all duration-300"
+            style={{ width: `${(currentStep / 3) * 100}%` }}
+          />
+        </div>
+        
+        {/* Progress Steps Icons */}
         <div className="flex items-center justify-center space-x-4 w-full mb-2">
           {[0, 1, 2, 3].map((step, idx) => (
             <div key={step} className="flex items-center">
