@@ -107,47 +107,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signOut = async () => {
     console.log('Starting sign-out…')
-
-    // Helper that always clears local React state
+    
+    // Always clear local state first
     const clearState = () => {
       setUser(null)
       setSession(null)
       setLoading(false)
     }
 
-    // 1) Immediately clear the session locally so a page refresh does NOT restore it.
-    //    This is much faster than waiting for the network request to Supabase.
     try {
+      // Clear local session immediately
       await supabase.auth.signOut({ scope: 'local' })
-    } catch (err) {
-      // Even if this fails, we'll still proceed. The goal is to clear local storage ASAP.
-      console.warn('Local signOut threw', err)
+      console.log('Local session cleared')
+      
+      // Clear state immediately after local signout
+      clearState()
+      
+      // Additional cleanup for potential stale data
+      try {
+        // Clear any potential localStorage keys that might be stale
+        if (typeof window !== 'undefined') {
+          const keysToRemove = []
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i)
+            if (key && key.includes('supabase')) {
+              keysToRemove.push(key)
+            }
+          }
+          keysToRemove.forEach(key => localStorage.removeItem(key))
+        }
+      } catch (storageError) {
+        console.warn('Could not clear localStorage:', storageError)
+      }
+      
+      // Try global signout in background, but don't wait for it
+      supabase.auth.signOut({ scope: 'global' }).catch((error) => {
+        console.warn('Global signOut failed (continuing anyway):', error)
+      })
+      
+      console.log('Sign-out completed')
+    } catch (error) {
+      console.error('Error during sign out:', error)
+      // Always clear state even if signout fails
+      clearState()
     }
-
-    // 2) Fire off the global network sign-out in the background – this revokes the refresh token
-    //    on the Supabase backend, but we don't block the UI on it.
-    const TIMEOUT_MS = 8000
-
-    const globalSignOutPromise = supabase.auth.signOut({ scope: 'global' })
-
-    // Start a timer that will fallback-resolve after TIMEOUT_MS so the UI doesn't hang
-    const timeoutFallback = new Promise<{ error: undefined }>((resolve) => {
-      setTimeout(() => {
-        console.warn('Global signOut still pending after', TIMEOUT_MS, 'ms – continuing UI flow')
-        resolve({ error: undefined })
-      }, TIMEOUT_MS)
-    })
-
-    // Race the network request with the fallback; whichever finishes first unblocks the UI
-    const { error } = await Promise.race([globalSignOutPromise, timeoutFallback])
-
-    if (error) {
-      // Log but don't disrupt the UX – we cleared session locally already.
-      console.error('Supabase global signOut returned an error:', error)
-    }
-
-    clearState()
-    console.log('Sign-out flow complete (local cleared, global attempted)')
   }
 
   const value = {

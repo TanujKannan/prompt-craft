@@ -4,6 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { Sparkles, User, LogOut, Settings, Menu, X, Loader2 } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
 import AuthModal from './AuthModal'
@@ -61,16 +68,19 @@ export default function Header() {
     setShowUserDropdown(false)
     
     try {
-      await signOut() // This now never throws, just clears state
+      await signOut()
       console.log('Sign out completed successfully')
+      
+      // Redirect to home after successful signout
+      router.push('/')
     } catch (error) {
-      // This should never happen now, but just in case
-      console.error('Unexpected error during sign out:', error)
+      console.error('Error during sign out:', error)
+      // Still redirect even if there's an error
+      router.push('/')
+    } finally {
+      // Always reset the loading state
+      setSigningOut(false)
     }
-    
-    // Always redirect to home and reset sign out state
-    router.push('/')
-    setSigningOut(false)
   }
 
   const getUserDisplayName = () => {
@@ -343,6 +353,27 @@ export default function Header() {
         onClose={() => setShowAuthModal(false)} 
         defaultMode={authMode}
       />
+
+      {/* Sign Out Loading Popup */}
+      <Dialog open={signingOut} onOpenChange={() => {}}>
+        <DialogContent className="sm:max-w-[400px] [&>button]:hidden">
+          <DialogHeader>
+            <div className="flex flex-col items-center space-y-4">
+              <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gray-100">
+                <Loader2 className="h-8 w-8 text-gray-600 animate-spin" />
+              </div>
+              <div className="text-center">
+                <DialogTitle className="text-xl font-semibold text-gray-900">
+                  Signing Out
+                </DialogTitle>
+                <DialogDescription className="text-gray-600 mt-2">
+                  Please wait while we sign you out securely...
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+        </DialogContent>
+      </Dialog>
     </>
   )
 } 
