@@ -26,6 +26,7 @@ export default function Header() {
   const dropdownRef = useRef<HTMLDivElement>(null)
   // Ensure UI renders after client-side hydration even if context flags misbehave
   const [mounted, setMounted] = useState(false)
+  
   useEffect(() => {
     setMounted(true)
   }, [])
