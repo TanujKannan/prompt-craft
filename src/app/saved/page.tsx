@@ -5,8 +5,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { useAuth } from '@/lib/auth'
+import { useToast } from '@/components/ToastProvider'
 import AuthModal from '@/components/AuthModal'
-import { Lock, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Copy, AlertTriangle, Lock, RefreshCw } from 'lucide-react'
 
 interface SavedPrompt {
   id: string
@@ -17,6 +18,7 @@ interface SavedPrompt {
 
 export default function SavedPrompts() {
   const { user, loading: authLoading } = useAuth()
+  const { addToast } = useToast()
   const [prompts, setPrompts] = useState<SavedPrompt[]>([])
   const [loading, setLoading] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
@@ -71,8 +73,10 @@ export default function SavedPrompts() {
   const copyToClipboard = async (prompt: string) => {
     try {
       await navigator.clipboard.writeText(prompt)
+      addToast('Prompt copied to clipboard!', 'success')
     } catch (error) {
       console.error('Failed to copy to clipboard:', error)
+      addToast('Failed to copy to clipboard', 'error')
     }
   }
 
