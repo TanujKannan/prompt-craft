@@ -58,27 +58,19 @@ export default function Header() {
   }
 
   const handleSignOut = async () => {
-    if (signingOut) return // Prevent multiple clicks
+    if (signingOut) return
     
-    console.log('User clicked sign out')
     setSigningOut(true)
-    
-    // Close dropdowns immediately for better UX
     setShowMobileMenu(false)
     setShowUserDropdown(false)
     
     try {
       await signOut()
-      console.log('Sign out completed successfully')
-      
-      // Redirect to home after successful signout
       router.push('/')
     } catch (error) {
-      console.error('Error during sign out:', error)
-      // Still redirect even if there's an error
+      // Still redirect - if signOut failed, user likely wants to leave anyway
       router.push('/')
     } finally {
-      // Always reset the loading state
       setSigningOut(false)
     }
   }

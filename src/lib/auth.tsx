@@ -36,10 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data: { session } } = await supabase.auth.getSession()
         setSession(session)
         setUser(session?.user ?? null)
-        // setInitialCheck(true)
         setLoading(false)
       } catch (error) {
-        console.error('Error getting initial session:', error)
         setLoading(false)
       }
     }
@@ -54,8 +52,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(session?.user ?? null)
       setLoading(false)
 
-      // Create or update user profile when user signs up or signs in
-      if (session?.user && (event === 'SIGNED_IN' || event === 'SIGNED_UP')) {
+      // Create or update user profile when user signs in
+      if (session?.user && event === 'SIGNED_IN') {
         const { error } = await supabase
           .from('profiles')
           .upsert({
@@ -106,50 +104,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async () => {
-    console.log('Starting sign-out…')
-    
-    // Always clear local state first
-    const clearState = () => {
+    try {
+      // Let Supabase handle everything - it knows best
+      const { error } = await supabase.auth.signOut()
+      
+      if (error) {
+        throw error
+      }
+    } catch (error) {
+      // Clear local state as fallback only if Supabase fails
       setUser(null)
       setSession(null)
       setLoading(false)
-    }
-
-    try {
-      // Clear local session immediately
-      await supabase.auth.signOut({ scope: 'local' })
-      console.log('Local session cleared')
-      
-      // Clear state immediately after local signout
-      clearState()
-      
-      // Additional cleanup for potential stale data
-      try {
-        // Clear any potential localStorage keys that might be stale
-        if (typeof window !== 'undefined') {
-          const keysToRemove = []
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i)
-            if (key && key.includes('supabase')) {
-              keysToRemove.push(key)
-            }
-          }
-          keysToRemove.forEach(key => localStorage.removeItem(key))
-        }
-      } catch (storageError) {
-        console.warn('Could not clear localStorage:', storageError)
-      }
-      
-      // Try global signout in background, but don't wait for it
-      supabase.auth.signOut({ scope: 'global' }).catch((error) => {
-        console.warn('Global signOut failed (continuing anyway):', error)
-      })
-      
-      console.log('Sign-out completed')
-    } catch (error) {
-      console.error('Error during sign out:', error)
-      // Always clear state even if signout fails
-      clearState()
+      throw error // Re-throw so UI can handle it
     }
   }
 

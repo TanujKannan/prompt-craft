@@ -94,9 +94,6 @@ Generate 4-6 smart clarifying questions that will help determine the best techni
 
     const content = response.choices[0].message.content
 
-    // DEBUG: log raw Gemini output for troubleshooting JSON issues
-    console.log('Gemini raw response (first 500 chars):', content?.slice(0, 500))
-
     if (!content) {
       return NextResponse.json({ error: 'Failed to generate questions' }, { status: 500 })
     }

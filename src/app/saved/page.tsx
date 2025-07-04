@@ -55,18 +55,13 @@ export default function SavedPrompts() {
 
   // Simple effect that runs when user changes
   useEffect(() => {
-    console.log('🔄 Effect triggered:', { user: !!user, authLoading })
-    
     if (authLoading) {
-      console.log('⏳ Auth still loading, waiting...')
       return
     }
 
     if (user) {
-      console.log('👤 User found, loading prompts...')
       loadPrompts()
     } else {
-      console.log('👤 No user, clearing state...')
       setPrompts([])
       setError(null)
       setLoading(false)
@@ -76,9 +71,8 @@ export default function SavedPrompts() {
   const copyToClipboard = async (prompt: string) => {
     try {
       await navigator.clipboard.writeText(prompt)
-      console.log('✅ Copied to clipboard')
     } catch (error) {
-      console.error('❌ Failed to copy:', error)
+      console.error('Failed to copy to clipboard:', error)
     }
   }
 
