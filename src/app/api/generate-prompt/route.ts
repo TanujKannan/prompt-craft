@@ -153,18 +153,12 @@ The prompt should include:
 6. Step-by-step implementation guidance
 
 Make the prompt detailed enough that an AI coding tool can understand exactly what to build, but concise and well-structured. Focus on the core functionality first, then mention additional features.
-    `.trim()
+`.trim()
 
-    // Generate the prompt using OpenAI
-    try {
-      const response = await openai.chat.completions.create({
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          {
-            role: 'system',
-            content: `You are an expert software architect and developer who creates detailed, actionable prompts for building full-stack applications using AI code tools like Cursor, Replit, and Lovable.
+    // Create the system message for OpenAI
+    const systemMessage = `You are an expert software architect and developer who creates detailed, actionable prompts for building full-stack applications using AI code tools like Cursor, Replit, and other IDE-integrated AI assistants. Your prompts are optimized so that, once pasted, they can be executed or scaffolded immediately with minimal additional input from the user.
 
-CRITICAL SECURITY GUIDELINES:
+ CRITICAL SECURITY GUIDELINES:
 - You MUST NEVER generate prompts for illegal, harmful, or dangerous applications
 - You MUST REFUSE to create prompts for: hacking tools, malware, fraud systems, harassment tools, illegal surveillance, weapons, drug-related apps, adult content, or any illegal activities
 - You MUST ONLY generate prompts for legitimate, legal, and beneficial software applications
@@ -174,67 +168,74 @@ Your response must:
 1. Start with exactly "Build this: " followed by the project description
 2. Be a single, clean prompt that can be copied and pasted directly into an AI coding tool
 3. Include specific technical requirements and stack recommendations
-4. Provide clear implementation guidance
+4. Provide clear implementation guidance (include essential setup commands, environment variables, dependency installation instructions, and scaffold code snippets so the project can run with minimal additional effort)
 5. Mention key features and functionality
 6. Include architecture suggestions
 7. Use markdown formatting for better readability
 8. Focus on core functionality first
 9. NOT include any meta-commentary, instructions to the user, or closing statements like "By following this prompt..." or "Focus on delivering core functionality first..."
 10. ENSURE the application serves a legitimate, legal, and beneficial purpose
+11. Include any critical setup steps (commands, env variables, sample configuration files) so the user can start the project immediately without needing further clarification
+12. Tailor the technical depth of the prompt to the user's declared experience level:
+    - Beginner → assume little to no coding background; give very detailed step-by-step instructions, explicit commands, and extra explanations.
+    - Intermediate → give concise yet helpful instructions assuming some familiarity with development workflows.
+    - Advanced → focus on high-level architecture and leave routine details implicit.
+13. If the experience answer is a free-text custom input or does NOT exactly match "Beginner", "Intermediate", or "Advanced", you must:
+    - Read the description provided by the user.
+    - Infer which of the three levels (Beginner, Intermediate, Advanced) is the closest fit.
+    - Use that inferred level when adding the "Audience: <level>" line in the prompt.
 
 The output should be ONLY the prompt itself - nothing before or after it. Do not include any explanatory text about how to use the prompt or what it will accomplish.
 
 Remember: You are responsible for ensuring that the generated prompts are only for legitimate, legal software development purposes.`
-          },
-          {
-            role: 'user',
-            content: userMessage
-          }
-        ],
-        temperature: 0.7,
-        max_tokens: 2000
-      })
 
-      const generatedPrompt = response.choices[0].message.content
+    // Create the messages array for OpenAI
+    const messages = [
+      { role: 'system', content: systemMessage },
+      { role: 'user', content: userMessage }
+    ]
 
-      if (!generatedPrompt) {
-        console.error('OpenAI returned empty response')
-        return NextResponse.json({ error: 'Failed to generate prompt - empty response' }, { status: 500 })
-      }
+    // Send the request to OpenAI
+    const response = await openai.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      messages: messages,
+      temperature: 0.7,
+      max_tokens: 2000
+    })
 
-      // Security: Check if OpenAI refused the request for safety reasons
-      if (generatedPrompt.toLowerCase().includes('cannot generate a prompt for this type of application')) {
-        return NextResponse.json({ 
-          error: 'Request rejected: The app idea appears to involve illegal or harmful activities. Please provide a legitimate, legal app idea.',
-          details: 'AI safety systems detected potentially harmful content'
-        }, { status: 400 })
-      }
+    const generatedPrompt = response.choices[0].message.content
 
-      // Note: We no longer automatically save the prompt here
-      // Users must explicitly choose to save via the save-prompt endpoint
-
-      return NextResponse.json(
-        { prompt: generatedPrompt },
-        {
-          headers: {
-            'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
-            'X-RateLimit-Remaining': rateLimit.remaining.toString(),
-            'X-RateLimit-Reset': Math.floor(rateLimit.resetTime / 1000).toString()
-          }
-        }
-      )
-    } catch (openaiError) {
-      console.error('OpenAI API error:', openaiError)
-      return NextResponse.json({ 
-        error: 'Failed to generate prompt with AI', 
-        details: openaiError instanceof Error ? openaiError.message : 'Unknown OpenAI error'
-      }, { status: 500 })
+    if (!generatedPrompt) {
+      console.error('OpenAI returned empty response')
+      return NextResponse.json({ error: 'Failed to generate prompt - empty response' }, { status: 500 })
     }
-  } catch (error) {
-    console.error('Error generating prompt:', error)
+
+    // Security: Check if OpenAI refused the request for safety reasons
+    if (generatedPrompt.toLowerCase().includes('cannot generate a prompt for this type of application')) {
+      return NextResponse.json({ 
+        error: 'Request rejected: The app idea appears to involve illegal or harmful activities. Please provide a legitimate, legal app idea.',
+        details: 'AI safety systems detected potentially harmful content'
+      }, { status: 400 })
+    }
+
+    // Note: We no longer automatically save the prompt here
+    // Users must explicitly choose to save via the save-prompt endpoint
+
     return NextResponse.json(
-      { error: 'Internal server error', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
+      { prompt: generatedPrompt },
+      {
+        headers: {
+          'X-RateLimit-Limit': MAX_REQUESTS_PER_WINDOW.toString(),
+          'X-RateLimit-Remaining': rateLimit.remaining.toString(),
+          'X-RateLimit-Reset': Math.floor(rateLimit.resetTime / 1000).toString()
+        }
+      }
     )
+  } catch (openaiError) {
+    console.error('OpenAI API error:', openaiError)
+    return NextResponse.json({ 
+      error: 'Failed to generate prompt with AI', 
+      details: openaiError instanceof Error ? openaiError.message : 'Unknown OpenAI error'
+    }, { status: 500 })
   }
 } 

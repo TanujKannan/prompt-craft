@@ -938,7 +938,7 @@ export default function PromptBuilder() {
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {generatedQuestionsPreview.map((question, index) => (
                         <Card 
-                          key={question.id} 
+                          key={index} 
                           className="rounded-xl border border-gray-200 bg-white shadow-none animate-in slide-in-from-bottom-4 duration-500"
                           style={{ animationDelay: `${index * 100}ms` }}
                         >

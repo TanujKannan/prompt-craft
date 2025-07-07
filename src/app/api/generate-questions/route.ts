@@ -50,6 +50,7 @@ Rules for generating questions:
 4. Make questions beginner-friendly with clear multiple choice options
 5. Each question should help determine the best tech stack and implementation approach
 6. For each multiple-choice set, clearly flag **one option** as the simplest path to get an MVP running quickly by adding "recommended": true to that option object
+7. Include **exactly one** question that measures the user's coding and computer science experience level (e.g., Beginner, Intermediate, Advanced). Each option must contain a short description so the user knows precisely where they fit. This experience answer will later be used to adjust the detail level of the generated development prompt. **Set \`allowCustom\`: true for this question so users can describe their experience in their own words if needed, and DO NOT add a separate "Custom" option in the list.** **Do not flag recommended as true for this question.**
 
 For each question, provide:
 - A clear, specific question
