@@ -26,13 +26,14 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
   const [password, setPassword] = useState('')
   const [fullName, setFullName] = useState('')
   const [loading, setLoading] = useState(false)
+  const [googleLoading, setGoogleLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
 
   // 'password' = traditional sign in, 'magic' = email magic link
   const [signInMethod, setSignInMethod] = useState<'password' | 'magic'>('password')
 
-  const { signIn, signUp, signInWithMagicLink } = useAuth()
+  const { signIn, signUp, signInWithMagicLink, signInWithGoogle } = useAuth()
 
   // Update mode when defaultMode prop changes
   useEffect(() => {
@@ -103,6 +104,23 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
       setError('An unexpected error occurred')
     } finally {
       setLoading(false)
+    }
+  }
+
+  const handleGoogleSignIn = async () => {
+    setGoogleLoading(true)
+    setError(null)
+
+    try {
+      const { error } = await signInWithGoogle()
+      if (error) {
+        setError(error.message)
+      }
+      // Don't close modal here - let the auth state change handle it
+    } catch (err) {
+      setError('An unexpected error occurred with Google sign in')
+    } finally {
+      setGoogleLoading(false)
     }
   }
 
@@ -188,6 +206,48 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
         </DialogHeader>
 
         <div className="space-y-4 py-4">
+          {/* Google Sign In Button */}
+          <Button
+            type="button"
+            onClick={handleGoogleSignIn}
+            disabled={googleLoading}
+            variant="outline"
+            className="w-full relative"
+          >
+            {googleLoading ? (
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            ) : (
+              <svg
+                className="mr-2 h-4 w-4"
+                aria-hidden="true"
+                focusable="false"
+                data-prefix="fab"
+                data-icon="google"
+                role="img"
+                xmlns="http://www.w3.org/2000/svg"
+                viewBox="0 0 488 512"
+              >
+                <path
+                  fill="currentColor"
+                  d="M488 261.8C488 403.3 391.1 504 248 504 110.8 504 0 393.2 0 256S110.8 8 248 8c66.8 0 123 24.5 166.3 64.9l-67.5 64.9C258.5 52.6 94.3 116.6 94.3 256c0 86.5 69.1 156.6 153.7 156.6 98.2 0 135-70.4 140.8-106.9H248v-85.3h240z"
+                />
+              </svg>
+            )}
+            Continue with Google
+          </Button>
+
+          {/* Divider */}
+          <div className="relative">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">
+                Or continue with email
+              </span>
+            </div>
+          </div>
+
           {/* Email/Password or Magic Link Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
