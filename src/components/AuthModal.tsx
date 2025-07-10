@@ -12,7 +12,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { useAuth } from '@/lib/auth'
-import { Loader2, Mail, CheckCircle } from 'lucide-react'
+import { Loader2, Mail, CheckCircle, Link as LinkIcon } from 'lucide-react'
 
 interface AuthModalProps {
   isOpen: boolean
@@ -29,7 +29,10 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
   const [error, setError] = useState<string | null>(null)
   const [showEmailConfirmation, setShowEmailConfirmation] = useState(false)
 
-  const { signIn, signUp } = useAuth()
+  // 'password' = traditional sign in, 'magic' = email magic link
+  const [signInMethod, setSignInMethod] = useState<'password' | 'magic'>('password')
+
+  const { signIn, signUp, signInWithMagicLink } = useAuth()
 
   // Update mode when defaultMode prop changes
   useEffect(() => {
@@ -46,6 +49,7 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
       setError(null)
       setLoading(false)
       setShowEmailConfirmation(false)
+      setSignInMethod('password')
     }
   }, [isOpen, defaultMode])
 
@@ -56,6 +60,7 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
     setError(null)
     setLoading(false)
     setShowEmailConfirmation(false)
+    setSignInMethod('password')
   }
 
   const handleClose = () => {
@@ -78,11 +83,20 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
           setShowEmailConfirmation(true)
         }
       } else {
-        const { error } = await signIn(email, password)
-        if (error) {
-          setError(error.message)
+        if (signInMethod === 'password') {
+          const { error } = await signIn(email, password)
+          if (error) {
+            setError(error.message)
+          } else {
+            handleClose()
+          }
         } else {
-          handleClose()
+          const { error } = await signInWithMagicLink(email)
+          if (error) {
+            setError(error.message)
+          } else {
+            setShowEmailConfirmation(true)
+          }
         }
       }
     } catch (err) {
@@ -174,7 +188,7 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
         </DialogHeader>
 
         <div className="space-y-4 py-4">
-          {/* Email/Password Form */}
+          {/* Email/Password or Magic Link Form */}
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'signup' && (
               <div className="space-y-2">
@@ -202,18 +216,20 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
               />
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type="password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-              />
-            </div>
+            {signInMethod === 'password' && (
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required={signInMethod === 'password'}
+                  minLength={6}
+                />
+              </div>
+            )}
 
             {error && (
               <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-md p-3">
@@ -224,11 +240,39 @@ export default function AuthModal({ isOpen, onClose, defaultMode = 'signin' }: A
             <Button type="submit" className="w-full" disabled={loading}>
               {loading ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
+              ) : signInMethod === 'password' ? (
                 <Mail className="mr-2 h-4 w-4" />
+              ) : (
+                <LinkIcon className="mr-2 h-4 w-4" />
               )}
-              {mode === 'signin' ? 'Sign in' : 'Create account'}
+              {mode === 'signin'
+                ? signInMethod === 'password'
+                  ? 'Sign in'
+                  : 'Send magic link'
+                : 'Create account'}
             </Button>
+
+            {mode === 'signin' && (
+              <div className="text-xs text-center text-gray-500">
+                {signInMethod === 'password' ? (
+                  <button
+                    type="button"
+                    onClick={() => setSignInMethod('magic')}
+                    className="text-primary hover:underline font-medium mt-2"
+                  >
+                    Sign in with magic link instead
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSignInMethod('password')}
+                    className="text-primary hover:underline font-medium mt-2"
+                  >
+                    Use password instead
+                  </button>
+                )}
+              </div>
+            )}
           </form>
 
           {/* Toggle Mode */}

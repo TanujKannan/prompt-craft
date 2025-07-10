@@ -13,6 +13,7 @@ interface AuthContextType {
   signUp: (email: string, password: string, fullName?: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
   signInWithGoogle: () => Promise<{ error: AuthError | null }>
+  signInWithMagicLink: (email: string) => Promise<{ error: AuthError | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -103,6 +104,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error }
   }
 
+  const signInWithMagicLink = async (email: string) => {
+    // Send a passwordless sign-in link (magic link) to the user's email
+    const { error } = await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
+      },
+    })
+    return { error }
+  }
+
   const signOut = async () => {
     try {
       // Add timeout to prevent hanging
@@ -133,6 +145,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signUp,
     signOut,
     signInWithGoogle,
+    signInWithMagicLink,
   }
 
   return (
