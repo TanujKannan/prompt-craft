@@ -5,11 +5,11 @@ import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { HelpCircle, Sparkles, Copy, BookOpen, ArrowRight, Check, ChevronDown, ChevronRight, Edit } from 'lucide-react'
+import { HelpCircle, Sparkles, Copy, BookOpen, ArrowRight, Check, Edit } from 'lucide-react'
 import { debounce } from 'lodash'
 import { useAuth } from '@/lib/auth'
 import { promptTemplates, templateCategories, getTemplatesByCategory, type PromptTemplate } from '@/lib/templates'
-import { Lightbulb, Rocket, Database, Palette, UserCheck, Plus, X } from 'lucide-react'
+import { Lightbulb, Plus, X, Rocket } from 'lucide-react'
 import AuthModal from '@/components/AuthModal'
 import { useToast } from '@/components/ToastProvider'
 
@@ -182,9 +182,10 @@ export default function PromptBuilder() {
   const [isSaving, setIsSaving] = useState(false)
   const [promptSaved, setPromptSaved] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({})
   const [isEditingIdea, setIsEditingIdea] = useState(false)
   const [editedIdea, setEditedIdea] = useState('')
+  const [celebrateProgress, setCelebrateProgress] = useState(false)
+  const [lastAnsweredQuestion, setLastAnsweredQuestion] = useState<string | null>(null)
   const { addToast } = useToast()
 
   // Check for template in localStorage on mount
@@ -404,11 +405,41 @@ export default function PromptBuilder() {
   }
 
   const handleAnswerSelect = (questionId: string, selectedValue: string) => {
+    const wasAlreadyAnswered = answers[questionId]?.selected || answers[questionId]?.custom
+    
     setAnswers(prev => ({ 
       ...prev, 
       [questionId]: { ...prev[questionId], selected: selectedValue, custom: undefined }
     }))
     setShowCustomInput(prev => ({ ...prev, [questionId]: false }))
+    setLastAnsweredQuestion(questionId)
+    
+    // Celebrate progress if this is a new answer
+    if (!wasAlreadyAnswered) {
+      const newAnswerCount = Object.keys(answers).length + 1
+      const progressPercent = (newAnswerCount / dynamicQuestions.length) * 100
+      
+      // Trigger celebration for milestones
+      if (progressPercent === 50 || progressPercent === 100 || newAnswerCount % 3 === 0) {
+        setCelebrateProgress(true)
+        setTimeout(() => setCelebrateProgress(false), 2000)
+      }
+      
+      // Auto-scroll to next unanswered question
+      setTimeout(() => {
+        const currentIndex = dynamicQuestions.findIndex(q => q.id === questionId)
+        const nextUnansweredIndex = dynamicQuestions.findIndex((q, idx) => 
+          idx > currentIndex && !answers[q.id]?.selected && !answers[q.id]?.custom
+        )
+        
+        if (nextUnansweredIndex !== -1) {
+          const nextElement = document.getElementById(`question-${dynamicQuestions[nextUnansweredIndex].id}`)
+          if (nextElement) {
+            nextElement.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          }
+        }
+      }, 500)
+    }
     
     // Only save if questions have been generated and we have dynamic questions
     if (questionsGenerated && dynamicQuestions.length > 0) {
@@ -558,69 +589,9 @@ export default function PromptBuilder() {
   const canProceedToStep3 = Object.keys(answers).length === dynamicQuestions.length && 
     dynamicQuestions.every(q => answers[q.id]?.selected || answers[q.id]?.custom)
 
-  const getQuestionIcon = (questionId: string) => {
-    if (questionId === 'framework') return <Rocket className="h-5 w-5 text-gray-400" />
-    if (questionId === 'auth') return <UserCheck className="h-5 w-5 text-gray-400" />
-    if (questionId === 'backend' || questionId === 'database') return <Database className="h-5 w-5 text-gray-400" />
-    if (questionId === 'ui') return <Palette className="h-5 w-5 text-gray-400" />
-    if (questionId === 'features') return <Plus className="h-5 w-5 text-gray-400" />
-    return <HelpCircle className="h-5 w-5 text-gray-400" />
-  }
 
-  // Function to group questions by category
-  const groupQuestionsByCategory = (questions: ClarifyingQuestion[]) => {
-    const groups: Record<string, ClarifyingQuestion[]> = {}
-    
-    questions.forEach(question => {
-      // Determine category based on question content/type
-      let category = 'General'
-      const qLower = question.question.toLowerCase()
-      
-      if (qLower.includes('feature') || qLower.includes('functionality') || qLower.includes('what should')) {
-        category = 'Core Features'
-      } else if (qLower.includes('user') || qLower.includes('authentication') || qLower.includes('login') || qLower.includes('account')) {
-        category = 'User Management'
-      } else if (qLower.includes('database') || qLower.includes('data') || qLower.includes('storage')) {
-        category = 'Data & Storage'
-      } else if (qLower.includes('design') || qLower.includes('ui') || qLower.includes('theme') || qLower.includes('style')) {
-        category = 'Design & UI'
-      } else if (qLower.includes('deploy') || qLower.includes('host') || qLower.includes('platform')) {
-        category = 'Deployment'
-      } else if (qLower.includes('tech') || qLower.includes('framework') || qLower.includes('library')) {
-        category = 'Technology Stack'
-      }
-      
-      if (!groups[category]) {
-        groups[category] = []
-      }
-      groups[category].push(question)
-    })
-    
-    return groups
-  }
 
-  // Toggle section expansion
-  const toggleSection = (sectionName: string) => {
-    setExpandedSections(prev => ({
-      ...prev,
-      [sectionName]: !prev[sectionName]
-    }))
-  }
 
-  // Initialize expanded sections when questions are generated
-  useEffect(() => {
-    if (dynamicQuestions.length > 0) {
-      const questionGroups = groupQuestionsByCategory(dynamicQuestions)
-      const initialExpanded: Record<string, boolean> = {}
-      
-      // Expand first section by default, collapse others
-      Object.keys(questionGroups).forEach((category, index) => {
-        initialExpanded[category] = index === 0
-      })
-      
-      setExpandedSections(initialExpanded)
-    }
-  }, [dynamicQuestions])
 
   // Handle editing app idea
   const startEditingIdea = () => {
@@ -899,19 +870,30 @@ export default function PromptBuilder() {
         {/* Step 2: Clarifying Questions */}
         {currentStep === 2 && (
           <div className="w-full flex flex-col items-center space-y-8">
-            <div className="flex flex-col items-center text-center space-y-2">
-              <HelpCircle className="h-6 w-6 text-gray-400" />
-              <h2 className="text-2xl font-bold text-gray-900">Let's configure your app</h2>
-              <p className="text-base text-gray-500">
-                {isGeneratingQuestions 
-                  ? "Our AI is analyzing your app idea to generate personalized questions..."
-                  : "These questions are tailored specifically to your app idea. Don't worry if they seem technical - we'll explain everything and suggest the best options for your needs."
-                }
-              </p>
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
+                <HelpCircle className="h-8 w-8 text-white" />
+              </div>
+              <div className="space-y-2">
+                <h2 className="text-3xl font-bold bg-gradient-to-r from-gray-900 to-gray-600 bg-clip-text text-transparent">
+                  Let's configure your app
+                </h2>
+                <p className="text-lg text-gray-600 max-w-2xl">
+                  {isGeneratingQuestions 
+                    ? "Our AI is analyzing your app idea to generate personalized questions..."
+                    : "These questions are tailored specifically to your app idea. We'll guide you through each decision with clear explanations and smart recommendations."
+                  }
+                </p>
+              </div>
               {!isGeneratingQuestions && questionsGenerated && dynamicQuestions.length > 0 && (
-                <div className="flex items-center gap-2 text-sm text-green-600 bg-green-50 px-3 py-1 rounded-full border border-green-200">
+                <div className="flex items-center gap-2 text-sm font-medium text-green-700 bg-gradient-to-r from-green-100 to-blue-100 px-4 py-2 rounded-full border border-green-200 shadow-sm">
                   <Sparkles className="h-4 w-4" />
-                  AI-generated questions for your app idea
+                  AI-generated questions for "{appIdea.substring(0, 50)}..."
+                </div>
+              )}
+              {!isGeneratingQuestions && questionsGenerated && dynamicQuestions.length > 0 && (
+                <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                  💡 Tip: Use Tab to navigate between options, Space to select, Esc to close custom inputs
                 </div>
               )}
             </div>
@@ -1035,195 +1017,361 @@ export default function PromptBuilder() {
                 )}
               </div>
             ) : (
-              <div className="w-full space-y-4">
-                {Object.entries(groupQuestionsByCategory(dynamicQuestions)).map(([category, questions]) => {
-                  const isExpanded = expandedSections[category]
-                  const answeredCount = questions.filter(q => answers[q.id]?.selected || answers[q.id]?.custom).length
-                  
-                  return (
-                    <div key={category} className="border border-gray-200 rounded-xl bg-white shadow-none">
-                      {/* Section Header */}
-                      <button
-                        onClick={() => toggleSection(category)}
-                        className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50 rounded-t-xl transition-colors"
-                      >
-                        <div className="flex items-center gap-3">
-                          {isExpanded ? (
-                            <ChevronDown className="h-5 w-5 text-gray-500" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5 text-gray-500" />
-                          )}
-                          <h3 className="text-lg font-semibold text-gray-900">{category}</h3>
-                          <span className="text-sm text-gray-500">
-                            ({answeredCount}/{questions.length} answered)
-                          </span>
-                        </div>
-                        {answeredCount === questions.length && (
-                          <div className="flex items-center gap-1 text-green-600">
-                            <Check className="h-4 w-4" />
-                            <span className="text-sm font-medium">Complete</span>
-                          </div>
-                        )}
-                      </button>
-                      
-                      {/* Section Content */}
-                      {isExpanded && (
-                        <div className="px-6 pb-6">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {questions.map((question) => {
-                              const currentAnswer = answers[question.id]
-                              const isCustomInputVisible = showCustomInput[question.id]
-                              return (
-                                <Card key={question.id} className="rounded-xl border border-gray-100 bg-gray-50 shadow-none">
-                                  <CardHeader className="flex flex-col items-start space-y-2 pb-2">
-                                    <div className="flex items-center gap-2">
-                                      {getQuestionIcon(question.id)}
-                                      <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
-                                    </div>
-                                  </CardHeader>
-                                  <CardContent className="space-y-4">
-                                    {/* Predefined Options */}
-                                    {question.options && question.options.length > 0 && (
-                                      <div className="space-y-3">
-                                        {question.options.map((option) => {
-                                          const isSelected = currentAnswer?.selected === option.value
-                                          return (
-                                            <div
-                                              key={option.value}
-                                              className={`rounded-md border border-gray-200 bg-white px-3 py-2 flex items-center justify-between gap-3 transition-all ${
-                                                isSelected ? 'ring-2 ring-black border-black' : 'hover:border-gray-300'
-                                              }`}
-                                            >
-                                              <div className="flex-1">
-                                                <div className="font-medium text-base text-gray-900 flex items-center gap-2">
-                                                  {option.label}
-                                                  {option.recommended && (
-                                                    <span className="text-xs font-semibold text-white bg-green-600 px-2 py-0.5 rounded">Recommended</span>
-                                                  )}
-                                                </div>
-                                                <div className="text-sm text-gray-500 mt-1">
-                                                  {option.explanation}
-                                                </div>
-                                              </div>
-                                              <Button
-                                                onClick={() => handleAnswerSelect(question.id, option.value)}
-                                                size="sm"
-                                                variant={isSelected ? "default" : "outline"}
-                                                className={`rounded-md min-w-[80px] ${
-                                                  isSelected 
-                                                    ? 'bg-black text-white hover:bg-gray-900' 
-                                                    : 'border-gray-200 text-gray-700 hover:bg-gray-50'
-                                                }`}
-                                              >
-                                                {isSelected ? (
-                                                  <>
-                                                    <Check className="h-3 w-3 mr-1" />
-                                                    Selected
-                                                  </>
-                                                ) : (
-                                                  'Select'
-                                                )}
-                                              </Button>
-                                            </div>
-                                          )
-                                        })}
-                                      </div>
-                                    )}
-
-                                    {/* Custom Input Toggle */}
-                                    {question.allowCustom && (
-                                      <div className="space-y-3">
-                                        <Button
-                                          onClick={() => toggleCustomInput(question.id)}
-                                          variant="outline"
-                                          size="sm"
-                                          className="w-full text-gray-600 border-gray-200 hover:bg-gray-50"
-                                        >
-                                          {isCustomInputVisible ? (
-                                            <>
-                                              <X className="h-4 w-4 mr-2" />
-                                              Hide Custom Input
-                                            </>
-                                          ) : (
-                                            <>
-                                              <Plus className="h-4 w-4 mr-2" />
-                                              Add Custom Answer
-                                            </>
-                                          )}
-                                        </Button>
-
-                                        {isCustomInputVisible && (
-                                          <Textarea
-                                            placeholder={question.placeholder || "Enter your custom answer..."}
-                                            value={currentAnswer?.custom || ''}
-                                            onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                                            className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                                          />
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Input-only Questions */}
-                                    {question.type === 'input' && (
-                                      <Textarea
-                                        placeholder={question.placeholder || "Enter your answer..."}
-                                        value={currentAnswer?.custom || ''}
-                                        onChange={(e) => handleCustomInput(question.id, e.target.value)}
-                                        className="min-h-[80px] text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
-                                      />
-                                    )}
-                                  </CardContent>
-                                </Card>
-                              )
-                            })}
-                          </div>
-                        </div>
+              <div className="w-full space-y-8">
+                {/* Progress Section */}
+                <div className={`bg-white rounded-xl p-6 border border-gray-200 shadow-sm transition-all duration-500 ${
+                  celebrateProgress ? 'scale-105 shadow-lg border-green-300 bg-green-50' : ''
+                }`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-semibold text-gray-900">Your Progress</h3>
+                      {celebrateProgress && (
+                        <span className="text-xl animate-bounce">🎉</span>
                       )}
                     </div>
-                  )
-                })}
+                    <div className="text-right">
+                      <div className="text-sm font-medium text-gray-600">
+                        {Object.keys(answers).length} of {dynamicQuestions.length} completed
+                      </div>
+                      <div className="text-xs text-gray-500">
+                        {dynamicQuestions.length - Object.keys(answers).length === 0 
+                          ? "All done! 🚀" 
+                          : `${dynamicQuestions.length - Object.keys(answers).length} remaining`
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Progress Bar */}
+                  <div className="relative w-full bg-gray-200 rounded-full h-4 mb-3 overflow-hidden">
+                    <div 
+                      className={`h-4 rounded-full transition-all duration-700 ease-out ${
+                        Object.keys(answers).length === dynamicQuestions.length
+                          ? 'bg-gradient-to-r from-green-400 via-blue-500 to-purple-600'
+                          : 'bg-gradient-to-r from-blue-500 to-green-500'
+                      }`}
+                      style={{ width: `${(Object.keys(answers).length / dynamicQuestions.length) * 100}%` }}
+                    >
+                      {celebrateProgress && (
+                        <div className="w-full h-full bg-white opacity-30 animate-pulse rounded-full"></div>
+                      )}
+                    </div>
+                    {/* Progress sparkle effect */}
+                    {Object.keys(answers).length > 0 && (
+                      <div 
+                        className="absolute top-1/2 transform -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow-lg transition-all duration-700 ease-out"
+                        style={{ left: `${(Object.keys(answers).length / dynamicQuestions.length) * 100 - 1}%` }}
+                      >
+                        <div className="w-full h-full bg-white rounded-full animate-ping"></div>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {/* Progress Percentage and Status */}
+                  <div className="flex justify-between items-center">
+                    <p className="text-sm font-medium text-gray-700">
+                      {Math.round((Object.keys(answers).length / dynamicQuestions.length) * 100)}% complete
+                    </p>
+                    {Object.keys(answers).length === dynamicQuestions.length && (
+                      <span className="text-sm font-medium text-green-600 flex items-center gap-1">
+                        <Check className="h-4 w-4" />
+                        Ready to generate!
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Questions List */}
+                <div className="space-y-6 sm:space-y-8">
+                  {dynamicQuestions.map((question, index) => {
+                    const currentAnswer = answers[question.id]
+                    const isAnswered = currentAnswer?.selected || currentAnswer?.custom
+                    const isCustomInputVisible = showCustomInput[question.id]
+                    
+                    return (
+                      <div 
+                        key={question.id}
+                        id={`question-${question.id}`}
+                        className={`relative p-4 sm:p-6 rounded-xl border-2 shadow-sm transition-all duration-500 transform ${
+                          isAnswered 
+                            ? 'border-green-300 bg-gradient-to-br from-green-50 to-blue-50 shadow-green-100' 
+                            : 'border-gray-200 bg-white hover:shadow-lg hover:border-gray-300 hover:-translate-y-1'
+                        } ${
+                          lastAnsweredQuestion === question.id ? 'animate-pulse' : ''
+                        }`}
+                      >
+                        {/* Question Header */}
+                        <div className="flex items-start gap-3 sm:gap-4 mb-6">
+                          <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold transition-all duration-300 ${
+                            isAnswered 
+                              ? 'bg-gradient-to-r from-green-500 to-blue-500 text-white shadow-lg scale-110' 
+                              : 'bg-gradient-to-r from-gray-200 to-gray-300 text-gray-600 hover:from-blue-100 hover:to-purple-100'
+                          }`}>
+                            {isAnswered ? (
+                              <Check className="h-5 w-5" />
+                            ) : (
+                              index + 1
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center gap-2 mb-2">
+                              <h3 className="text-lg sm:text-xl font-bold text-gray-900">
+                                {question.question}
+                              </h3>
+                              {!isAnswered && (
+                                <span className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full font-medium">
+                                  Required
+                                </span>
+                              )}
+                            </div>
+                            {isAnswered && (
+                              <div className="flex items-center gap-2">
+                                <div className="text-sm text-green-700 font-medium bg-gradient-to-r from-green-100 to-blue-100 px-3 py-1 rounded-full inline-flex items-center gap-1 shadow-sm">
+                                  <Check className="h-3 w-3" />
+                                  {currentAnswer.selected ? 
+                                    question.options?.find(opt => opt.value === currentAnswer.selected)?.label 
+                                    : 'Custom answer'
+                                  }
+                                </div>
+                              </div>
+                            )}
+                            {!isAnswered && (
+                              <p className="text-sm text-gray-600">
+                                Choose the option that best fits your needs, or provide a custom answer.
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Options */}
+                        <div className="ml-0 sm:ml-8 space-y-3">
+                          {question.options && question.options.length > 0 && (
+                            <div className="space-y-2">
+                              {question.options.map((option) => {
+                                const isSelected = currentAnswer?.selected === option.value
+                                return (
+                                  <button
+                                    key={option.value}
+                                    onClick={() => handleAnswerSelect(question.id, option.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === ' ' || e.key === 'Enter') {
+                                        e.preventDefault()
+                                        handleAnswerSelect(question.id, option.value)
+                                      }
+                                    }}
+                                    className={`group w-full text-left p-4 rounded-xl border-2 transition-all duration-300 transform focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 ${
+                                      isSelected 
+                                        ? 'border-black bg-gradient-to-r from-gray-50 to-blue-50 shadow-lg scale-[1.02]' 
+                                        : option.recommended
+                                        ? 'border-green-300 bg-gradient-to-r from-green-50 to-blue-50 hover:border-green-400 hover:shadow-lg hover:scale-[1.01] focus:border-green-500'
+                                        : 'border-gray-200 bg-white hover:border-gray-300 hover:bg-gray-50 hover:shadow-md hover:scale-[1.01] focus:border-blue-400'
+                                    } ${
+                                      option.recommended && !isSelected ? 'ring-2 ring-green-200' : ''
+                                    }`}
+                                  >
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1">
+                                        <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                          <span className={`font-semibold ${
+                                            isSelected ? 'text-gray-900' : 'text-gray-800'
+                                          }`}>
+                                            {option.label}
+                                          </span>
+                                          {option.recommended && (
+                                            <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${
+                                              isSelected 
+                                                ? 'text-white bg-gradient-to-r from-green-500 to-blue-500'
+                                                : 'text-white bg-gradient-to-r from-green-500 to-green-600 animate-pulse'
+                                            }`}>
+                                              ⭐ Recommended
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-sm text-gray-600 leading-relaxed">
+                                          {option.explanation}
+                                        </p>
+                                        {option.recommended && !isSelected && (
+                                          <p className="text-xs text-green-700 font-medium mt-2 flex items-center gap-1">
+                                            <span className="w-1 h-1 bg-green-500 rounded-full"></span>
+                                            Best choice for most apps
+                                          </p>
+                                        )}
+                                      </div>
+                                      <div className={`flex-shrink-0 w-6 h-6 rounded-full border-3 flex items-center justify-center transition-all duration-300 ${
+                                        isSelected 
+                                          ? 'border-black bg-black shadow-lg' 
+                                          : option.recommended
+                                          ? 'border-green-400 group-hover:border-green-500'
+                                          : 'border-gray-300 group-hover:border-gray-400'
+                                      }`}>
+                                        {isSelected && (
+                                          <div className="w-2 h-2 bg-white rounded-full"></div>
+                                        )}
+                                        {!isSelected && option.recommended && (
+                                          <div className="w-2 h-2 bg-green-400 rounded-full opacity-70"></div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </button>
+                                )
+                              })}
+                            </div>
+                          )}
+
+                          {/* Custom Input Section */}
+                          {question.allowCustom && (
+                            <div className="space-y-3 mt-4">
+                              <Button
+                                onClick={() => toggleCustomInput(question.id)}
+                                variant="outline"
+                                className={`w-full py-4 border-2 border-dashed transition-all duration-300 ${
+                                  isCustomInputVisible 
+                                    ? 'border-blue-300 bg-blue-50 text-blue-700 hover:border-blue-400' 
+                                    : 'border-gray-300 hover:border-blue-300 text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+                                }`}
+                              >
+                                {isCustomInputVisible ? (
+                                  <>
+                                    <X className="h-4 w-4 mr-2" />
+                                    Hide Custom Answer
+                                  </>
+                                ) : (
+                                  <>
+                                    <Plus className="h-4 w-4 mr-2" />
+                                    💡 Or provide your own answer
+                                  </>
+                                )}
+                              </Button>
+
+                              {isCustomInputVisible && (
+                                <div className="space-y-3 animate-in slide-in-from-top-2 duration-300">
+                                  <div className="relative">
+                                    <Textarea
+                                      placeholder={question.placeholder || "Enter your custom answer..."}
+                                      value={currentAnswer?.custom || ''}
+                                      onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                                      className="min-h-[120px] text-sm border-2 border-blue-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all resize-none bg-gradient-to-br from-white to-blue-50 p-4"
+                                      onKeyDown={(e) => {
+                                        if (e.key === 'Escape') {
+                                          toggleCustomInput(question.id)
+                                        }
+                                      }}
+                                    />
+                                    <div className="absolute bottom-2 right-2 text-xs text-gray-400 bg-white px-2 py-1 rounded-md">
+                                      Press Esc to close
+                                    </div>
+                                  </div>
+                                  {currentAnswer?.custom && (
+                                    <div className="text-sm text-green-700 font-medium bg-gradient-to-r from-green-100 to-blue-100 px-3 py-2 rounded-lg inline-flex items-center gap-2 shadow-sm">
+                                      <Check className="h-4 w-4" />
+                                      Custom answer provided ({currentAnswer.custom.length} characters)
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {/* Input-only Questions */}
+                          {question.type === 'input' && (
+                            <div className="space-y-3">
+                              <div className="relative">
+                                <Textarea
+                                  placeholder={question.placeholder || "Enter your answer..."}
+                                  value={currentAnswer?.custom || ''}
+                                  onChange={(e) => handleCustomInput(question.id, e.target.value)}
+                                  className="min-h-[120px] text-sm border-2 border-blue-200 rounded-xl focus:border-blue-500 focus:ring-2 focus:ring-blue-200 transition-all resize-none bg-gradient-to-br from-white to-blue-50 p-4"
+                                />
+                                <div className="absolute bottom-2 right-2 text-xs text-gray-400 bg-white px-2 py-1 rounded-md">
+                                  {currentAnswer?.custom?.length || 0} characters
+                                </div>
+                              </div>
+                              {currentAnswer?.custom && (
+                                <div className="text-sm text-green-700 font-medium bg-gradient-to-r from-green-100 to-blue-100 px-3 py-2 rounded-lg inline-flex items-center gap-2 shadow-sm">
+                                  <Check className="h-4 w-4" />
+                                  Answer provided ({currentAnswer.custom.length} characters)
+                                </div>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )}
-            <div className="flex justify-between w-full">
+            <div className="flex justify-between items-center w-full pt-8">
               <Button
                 variant="outline"
                 onClick={() => setCurrentStep(1)}
                 disabled={isGeneratingQuestions}
-                className="rounded-md px-6 py-2"
+                className="rounded-xl px-6 py-3 font-medium border-2 hover:border-gray-400 hover:shadow-md transition-all duration-300"
               >
-                Back
+                ← Edit App Idea
               </Button>
-              {user ? (
-                <Button
-                  onClick={generatePrompt}
-                  disabled={!canProceedToStep3 || isGenerating || isGeneratingQuestions}
-                  size="lg"
-                  className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition"
-                >
-                  {isGenerating ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Generating Prompt...
-                    </>
-                  ) : isGeneratingQuestions ? (
-                    <>
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                      Loading Questions...
-                    </>
-                  ) : (
-                    'Generate Prompt'
-                  )}
-                </Button>
-              ) : (
-                <Button
-                  onClick={() => setShowAuthModal(true)}
-                  disabled={!canProceedToStep3 || isGeneratingQuestions}
-                  size="lg"
-                  className="bg-blue-600 text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-blue-700 transition"
-                >
-                  Sign In to Generate Prompt
-                </Button>
-              )}
+              <div className="flex items-center gap-4">
+                {Object.keys(answers).length > 0 && Object.keys(answers).length < dynamicQuestions.length && (
+                  <div className="text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200 flex items-center gap-1">
+                    ⏳ {dynamicQuestions.length - Object.keys(answers).length} more questions to complete
+                  </div>
+                )}
+                {user ? (
+                  <Button
+                    onClick={generatePrompt}
+                    disabled={!canProceedToStep3 || isGenerating || isGeneratingQuestions}
+                    className={`rounded-xl px-8 py-3 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform ${
+                      canProceedToStep3 && !isGenerating && !isGeneratingQuestions
+                        ? 'bg-gradient-to-r from-black to-gray-800 text-white hover:scale-105'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {isGenerating ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        Creating Your Perfect Prompt...
+                      </>
+                    ) : isGeneratingQuestions ? (
+                      <>
+                        <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
+                        Loading Questions...
+                      </>
+                    ) : canProceedToStep3 ? (
+                      <>
+                        🚀 Generate My Perfect Prompt
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    ) : (
+                      <>
+                        Answer All Questions First
+                        <span className="ml-2 text-xs">({Object.keys(answers).length}/{dynamicQuestions.length})</span>
+                      </>
+                    )}
+                  </Button>
+                ) : (
+                  <Button
+                    onClick={() => setShowAuthModal(true)}
+                    disabled={!canProceedToStep3 || isGeneratingQuestions}
+                    className={`rounded-xl px-8 py-3 font-semibold shadow-lg hover:shadow-xl transition-all duration-300 transform ${
+                      canProceedToStep3 && !isGeneratingQuestions
+                        ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white hover:scale-105'
+                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                    }`}
+                  >
+                    {canProceedToStep3 ? (
+                      <>
+                        🔐 Sign In to Generate Prompt
+                        <ArrowRight className="h-4 w-4 ml-2" />
+                      </>
+                    ) : (
+                      <>
+                        Complete Questions to Continue
+                        <span className="ml-2 text-xs">({Object.keys(answers).length}/{dynamicQuestions.length})</span>
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
         )}
