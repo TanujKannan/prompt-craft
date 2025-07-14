@@ -4,10 +4,11 @@ import { useState, useEffect } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { useAuth } from '@/lib/auth'
 import { useToast } from '@/components/ToastProvider'
 import AuthModal from '@/components/AuthModal'
-import { Copy, AlertTriangle, Lock, RefreshCw } from 'lucide-react'
+import { Copy, AlertTriangle, Lock, RefreshCw, Trash2 } from 'lucide-react'
 
 interface SavedPrompt {
   id: string
@@ -23,6 +24,9 @@ export default function SavedPrompts() {
   const [loading, setLoading] = useState(false)
   const [showAuthModal, setShowAuthModal] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [promptToDelete, setPromptToDelete] = useState<SavedPrompt | null>(null)
+  const [isDeleting, setIsDeleting] = useState(false)
 
   // Load prompts by fetching them through our dedicated API route. This avoids
   // running the heavy join in the browser and keeps the RLS-bypass on the
@@ -77,6 +81,44 @@ export default function SavedPrompts() {
     } catch (error) {
       console.error('Failed to copy to clipboard:', error)
       addToast('Failed to copy to clipboard', 'error')
+    }
+  }
+
+  const openDeleteDialog = (prompt: SavedPrompt) => {
+    setPromptToDelete(prompt)
+    setDeleteDialogOpen(true)
+  }
+
+  const closeDeleteDialog = () => {
+    setDeleteDialogOpen(false)
+    setPromptToDelete(null)
+  }
+
+  const deletePrompt = async () => {
+    if (!promptToDelete || !user?.id) return
+
+    setIsDeleting(true)
+    try {
+      const response = await fetch(`/api/delete-prompt?id=${promptToDelete.id}&userId=${user.id}`, {
+        method: 'DELETE',
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to delete prompt')
+      }
+
+      // Remove the prompt from the local state
+      setPrompts(prevPrompts => prevPrompts.filter(p => p.id !== promptToDelete.id))
+      addToast('Prompt deleted successfully', 'success')
+      closeDeleteDialog()
+    } catch (error) {
+      console.error('Error deleting prompt:', error)
+      const message = error instanceof Error ? error.message : 'Failed to delete prompt'
+      addToast(message, 'error')
+    } finally {
+      setIsDeleting(false)
     }
   }
 
@@ -251,8 +293,17 @@ export default function SavedPrompts() {
                     readOnly
                     className="min-h-[120px] font-mono text-sm bg-white border border-gray-200 rounded-md focus:border-black focus:ring-0 transition"
                   />
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-3">
+                    <Button 
+                      onClick={() => openDeleteDialog(savedPrompt)} 
+                      variant="outline"
+                      className="rounded-md px-4 py-2 font-medium text-red-600 border-red-200 hover:bg-red-50 hover:border-red-300 transition"
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" />
+                      Delete
+                    </Button>
                     <Button onClick={() => copyToClipboard(savedPrompt.prompt)} className="bg-black text-white rounded-md px-6 py-2 font-medium shadow hover:shadow-md hover:bg-gray-900 transition">
+                      <Copy className="h-4 w-4 mr-2" />
                       Copy to Clipboard
                     </Button>
                   </div>
@@ -262,6 +313,61 @@ export default function SavedPrompts() {
           </div>
         )}
       </main>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-semibold text-red-600">Delete Prompt</DialogTitle>
+            <DialogDescription className="text-gray-600">
+              Are you sure you want to delete this prompt? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {promptToDelete && (
+            <div className="py-4 space-y-3">
+              <div className="p-3 bg-gray-50 rounded-lg border">
+                <p className="text-sm font-medium text-gray-900 mb-1">App Idea:</p>
+                <p className="text-sm text-gray-700 break-words">{promptToDelete.app_idea}</p>
+              </div>
+              <div className="flex justify-between text-sm">
+                <span className="text-gray-500">Created:</span>
+                <span className="font-medium text-gray-900">
+                  {new Date(promptToDelete.created_at).toLocaleDateString()}
+                </span>
+              </div>
+            </div>
+          )}
+          
+          <DialogFooter className="flex gap-2 pt-4">
+            <Button 
+              variant="outline" 
+              onClick={closeDeleteDialog}
+              disabled={isDeleting}
+              className="flex-1 sm:flex-none"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={deletePrompt}
+              disabled={isDeleting}
+              className="flex-1 sm:flex-none bg-red-600 text-white hover:bg-red-700"
+            >
+              {isDeleting ? (
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="h-4 w-4 mr-2" />
+                  Delete
+                </>
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
