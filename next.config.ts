@@ -1,22 +1,45 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Configure ESLint to be less strict on non-security-critical rules
   eslint: {
-    // Warning: This allows production builds to successfully complete even if
-    // your project has ESLint errors.
-    ignoreDuringBuilds: true,
+    // Keep ESLint enabled but ignore specific non-security rules
+    ignoreDuringBuilds: false,
   },
+  // Keep TypeScript error checking enabled for security
   typescript: {
-    // !! WARN !!
-    // Dangerously allow production builds to successfully complete even if
-    // your project has type errors.
-    // !! WARN !!
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
   // Strip console.* (incl. console.error) in production bundles
   compiler: {
     // Only remove consoles when building for production
     removeConsole: process.env.NODE_ENV === 'production',
+  },
+  // Add security headers
+  async headers() {
+    return [
+      {
+        source: '/(.*)',
+        headers: [
+          {
+            key: 'X-Frame-Options',
+            value: 'DENY',
+          },
+          {
+            key: 'X-Content-Type-Options',
+            value: 'nosniff',
+          },
+          {
+            key: 'Referrer-Policy',
+            value: 'strict-origin-when-cross-origin',
+          },
+          {
+            key: 'X-XSS-Protection',
+            value: '1; mode=block',
+          },
+        ],
+      },
+    ]
   },
 };
 
