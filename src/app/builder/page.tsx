@@ -165,7 +165,7 @@ export default function PromptBuilder() {
   const [selectedTemplate, setSelectedTemplate] = useState<PromptTemplate | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('all')
   const [appIdea, setAppIdea] = useState('')
-  const [answers, setAnswers] = useState<Record<string, string>>({})
+  const [answers, setAnswers] = useState<Record<string, { selected?: string; custom?: string }>>({})
   const [sessionId] = useState<string>(() => crypto.randomUUID())
   const [generatedPrompt, setGeneratedPrompt] = useState('')
   const [isGenerating, setIsGenerating] = useState(false)
@@ -617,7 +617,6 @@ export default function PromptBuilder() {
     setShowCustomInput({})
     setGeneratedPrompt('')
     setQuestionsGeneratedForIdea('')
-    setExpandedSections({})
     
     // Go back to step 2 to show new questions
     setCurrentStep(2)
@@ -926,7 +925,7 @@ export default function PromptBuilder() {
                         >
                           <CardHeader className="flex flex-col items-start space-y-2 pb-2">
                             <div className="flex items-center gap-2">
-                              {getQuestionIcon(question.id)}
+                              <HelpCircle className="h-4 w-4 text-blue-500" />
                               <CardTitle className="text-base font-semibold text-gray-900">{question.question}</CardTitle>
                             </div>
                           </CardHeader>

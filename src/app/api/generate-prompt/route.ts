@@ -191,8 +191,8 @@ Remember: You are responsible for ensuring that the generated prompts are only f
 
     // Create the messages array for OpenAI
     const messages = [
-      { role: 'system', content: systemMessage },
-      { role: 'user', content: userMessage }
+      { role: 'system' as const, content: systemMessage },
+      { role: 'user' as const, content: userMessage }
     ]
 
     // Send the request to OpenAI

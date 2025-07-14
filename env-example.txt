@@ -3,12 +3,12 @@ NEXT_PUBLIC_SUPABASE_URL=your-supabase-project-url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-supabase-anon-key
 SUPABASE_SERVICE_ROLE_KEY=your-supabase-service-role-key
 
-# OpenAI Configuration
-OPENAI_API_KEY=your-openai-api-key
+# Groq AI Configuration (OpenAI-compatible API)
+GROQ_API_KEY=your-groq-api-key
 
 # Instructions:
 # 1. Copy this file and rename it to .env.local in the same directory
-# 2. Fill in your actual values from Supabase and OpenAI
+# 2. Fill in your actual values from Supabase and Groq
 # 3. The .env.local file is already in .gitignore so your keys won't be committed
 
 # To get your Supabase credentials:
@@ -17,7 +17,7 @@ OPENAI_API_KEY=your-openai-api-key
 # 3. Go to Settings > API
 # 4. Copy the Project URL, anon/public key, and service_role key
 
-# To get your OpenAI API key:
-# 1. Go to https://platform.openai.com/api-keys
+# To get your Groq API key:
+# 1. Go to https://console.groq.com/keys
 # 2. Create a new API key
-# 3. Copy the key (starts with sk-) 
+# 3. Copy the key (starts with gsk_) 

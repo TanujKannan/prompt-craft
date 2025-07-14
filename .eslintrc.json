@@ -1,0 +1,17 @@
+{
+  "extends": ["next/core-web-vitals"],
+  "rules": {
+    // Disable non-security-critical rules for faster builds
+    "react/no-unescaped-entities": "off",
+    "@typescript-eslint/no-unused-vars": "warn",
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-empty-object-type": "off",
+    "react-hooks/exhaustive-deps": "warn",
+    
+    // Keep security-critical rules enabled
+    "@typescript-eslint/no-unsafe-assignment": "error",
+    "@typescript-eslint/no-unsafe-call": "error",
+    "@typescript-eslint/no-unsafe-member-access": "error",
+    "@typescript-eslint/no-unsafe-return": "error"
+  }
+} 

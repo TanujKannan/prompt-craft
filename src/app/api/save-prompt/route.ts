@@ -7,10 +7,21 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY! // This bypasses RLS
 )
 
+interface SavePromptAnswer {
+  question: string
+  selectedAnswer: string
+  explanation: string
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json()
-    const { appIdea, userId, answers, prompt } = body
+    const { appIdea, userId, answers, prompt }: {
+      appIdea: string
+      userId: string
+      answers: SavePromptAnswer[]
+      prompt: string
+    } = body
 
     // Validate input
     if (!appIdea || !userId || !answers || !prompt) {
